@@ -173,6 +173,7 @@ const todayCountEl = document.getElementById('todayCount');
 let html5QrCode, scanning = false, busy = false;
 let currentGuardName = '';
 let currentMode = null; // 'checkin' | 'checkout' | 'recharge'
+let audioCtx = null;
 
 // ---------------- NAME PROMPT ----------------
 document.getElementById('startBtn').onclick = () => {
@@ -180,6 +181,14 @@ document.getElementById('startBtn').onclick = () => {
   if (!name) return;
   currentGuardName = name;
   localStorage.setItem('guardName', name);
+
+  // Unlock audio here — this is a real tap, so browsers allow it.
+  // Reusing this same context later (from a QR scan, not a tap) still works.
+  try{
+    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    if (audioCtx.state === 'suspended') audioCtx.resume();
+  } catch(e) {}
+
   boot();
 };
 signoutBtn.onclick = () => { localStorage.removeItem('guardName'); location.reload(); };
@@ -199,7 +208,15 @@ function boot(){
 
 // ---------------- MODE SELECT ----------------
 document.querySelectorAll('.mode-btn').forEach(btn => {
-  btn.onclick = () => enterMode(btn.dataset.mode);
+  btn.onclick = () => {
+    if (!audioCtx){
+      try{
+        audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      } catch(e) {}
+    }
+    if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
+    enterMode(btn.dataset.mode);
+  };
 });
 document.getElementById('cancelBtn').onclick = exitMode;
 
@@ -262,8 +279,8 @@ async function routeScan(code){
   const member = await findMember(code);
 
   if (currentMode === 'checkin') return handleCheckIn(code, member);
-  if (currentMode === 'checkout') return handleCheckOut(member);
-  if (currentMode === 'recharge') return handleRecharge(member);
+  if (currentMode === 'checkout') return handleCheckOut(member, code);
+  if (currentMode === 'recharge') return handleRecharge(member, code);
 }
 
 async function findMember(rawCode){
@@ -352,9 +369,9 @@ function showVehicleEntryForm(code, existingMember){
 }
 
 // ---------------- CHECK OUT ----------------
-async function handleCheckOut(member){
+async function handleCheckOut(member, scannedCode){
   if (!member){
-    flashBarrier('stop'); showResult({ name:'Unrecognized QR', meta:'No matching card or member', flagBad:true }); return;
+    flashBarrier('stop'); showResult({ name:'Unrecognized QR', meta: `Scanned: ${scannedCode}`, flagBad:true }); return;
   }
   const { data: openSession } = await sb.from('parking_sessions')
     .select('*').eq('member_id', member.id).is('checked_out_at', null).maybeSingle();
@@ -414,10 +431,10 @@ function calcAmount(checkedInIso){
 }
 
 // ---------------- RECHARGE ----------------
-async function handleRecharge(member){
+async function handleRecharge(member, scannedCode){
   if (!member || member.plan_type !== 'monthly'){
     flashBarrier('stop');
-    showResult({ name: member ? member.name : 'Unrecognized QR', meta: 'Not a monthly pass', flagBad: true });
+    showResult({ name: member ? member.name : 'Unrecognized QR', meta: member ? 'Not a monthly pass' : `Scanned: ${scannedCode}`, flagBad: true });
     return;
   }
   const today = new Date().toISOString().slice(0,10);
@@ -486,16 +503,17 @@ function flashBarrier(state){
 
 function playBeep(){
   try{
-    const ctx = new (window.AudioContext || window.webkitAudioContext)();
-    const osc = ctx.createOscillator();
-    const gain = ctx.createGain();
+    if (!audioCtx) return;
+    if (audioCtx.state === 'suspended') audioCtx.resume();
+    const osc = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
     osc.type = 'sine';
     osc.frequency.value = 880;
-    gain.gain.setValueAtTime(0.15, ctx.currentTime);
-    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.18);
-    osc.connect(gain); gain.connect(ctx.destination);
+    gain.gain.setValueAtTime(0.15, audioCtx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.18);
+    osc.connect(gain); gain.connect(audioCtx.destination);
     osc.start();
-    osc.stop(ctx.currentTime + 0.18);
+    osc.stop(audioCtx.currentTime + 0.18);
   } catch(e) {}
 }
 
