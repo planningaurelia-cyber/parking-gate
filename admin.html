@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Admin — Parking Control</title>
+<link href="https://fonts.googleapis.com/css2?family=Oswald:wght@500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+  :root{
+    --ink:#14161a; --panel:#1d2027; --panel-2:#252932;
+    --hazard:#f4b400; --go:#2fb872; --stop:#e5484d;
+    --text:#f2f0ea; --text-dim:#8b909c; --radius:12px;
+  }
+  *{box-sizing:border-box;}
+  body{margin:0;background:var(--ink);color:var(--text);font-family:'JetBrains Mono',monospace;}
+  h1,h2,.display{font-family:'Oswald',sans-serif;}
+  .wrap{max-width:900px;margin:0 auto;padding:24px 20px 60px;}
+  .topbar{display:flex;justify-content:space-between;align-items:center;margin-bottom:24px;
+    border-bottom:3px solid transparent;
+    border-image:repeating-linear-gradient(135deg,var(--hazard) 0 14px,var(--ink) 14px 28px) 3;
+    padding-bottom:14px;}
+  .topbar .title{font-size:24px;font-weight:600;}
+  .card{background:var(--panel);border-radius:var(--radius);padding:20px;margin-bottom:20px;}
+  .card h2{font-size:17px;margin:0 0 14px;font-weight:600;}
+  label{font-size:12px;color:var(--text-dim);display:block;margin:0 0 4px;}
+  input,select{width:100%;padding:9px 10px;border-radius:8px;border:1px solid #3a3f4a;
+    background:var(--panel-2);color:var(--text);font-family:inherit;font-size:14px;margin-bottom:12px;}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:0 14px;}
+  .btn{padding:10px 18px;border-radius:8px;border:none;font-family:'Oswald',sans-serif;
+    font-weight:600;font-size:14px;cursor:pointer;}
+  .btn-go{background:var(--go);color:#04140c;}
+  table{width:100%;border-collapse:collapse;font-size:13px;}
+  th{text-align:left;color:var(--text-dim);font-weight:500;padding:8px;border-bottom:1px solid #33384280;font-size:11px;text-transform:uppercase;letter-spacing:0.4px;}
+  td{padding:8px;border-bottom:1px solid #33384280;vertical-align:middle;}
+  .pill{padding:3px 9px;border-radius:20px;font-size:11px;font-weight:600;}
+  .pill.ok{background:rgba(47,184,114,.15);color:var(--go);}
+  .pill.bad{background:rgba(229,72,77,.15);color:var(--stop);}
+  .qrlink{color:var(--hazard);text-decoration:none;font-size:12px;}
+  .err{color:var(--stop);font-size:13px;}
+  .login{max-width:300px;margin:80px auto;display:flex;flex-direction:column;gap:10px;}
+  .hidden{display:none!important;}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="login" id="loginView">
+    <h2 class="display">Admin sign-in</h2>
+    <input type="email" id="email" placeholder="email">
+    <input type="password" id="password" placeholder="password">
+    <button class="btn btn-go" id="loginBtn">Sign in</button>
+    <div class="err" id="loginErr"></div>
+  </div>
+
+  <div id="mainView" class="hidden">
+    <div class="topbar">
+      <div class="title">ADMIN · Members</div>
+      <button class="btn" id="signout" style="background:none;border:1px solid #3a3f4a;color:var(--text-dim);">Sign out</button>
+    </div>
+
+    <div class="card">
+      <h2>Add member</h2>
+      <div class="grid2">
+        <div><label>Name</label><input id="f_name"></div>
+        <div><label>Phone</label><input id="f_phone"></div>
+        <div><label>Vehicle number</label><input id="f_vehicle"></div>
+        <div>
+          <label>Plan type</label>
+          <select id="f_plan">
+            <option value="monthly">Monthly pass</option>
+            <option value="per_visit">Pay-per-visit</option>
+          </select>
+        </div>
+        <div id="monthlyFields">
+          <label>Monthly fee (₹)</label><input id="f_fee" type="number">
+        </div>
+        <div id="perVisitFields" style="display:none;">
+          <label>Per-visit rate (₹)</label><input id="f_rate" type="number">
+        </div>
+      </div>
+      <button class="btn btn-go" id="addBtn">Add member</button>
+      <div class="err" id="addErr"></div>
+    </div>
+
+    <div class="card">
+      <h2>Members</h2>
+      <table>
+        <thead>
+          <tr><th>Name</th><th>Vehicle</th><th>Plan</th><th>Status</th><th>QR</th><th></th></tr>
+        </thead>
+        <tbody id="memberRows"></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<script>
+const SUPABASE_URL = 'https://YOUR_PROJECT.supabase.co';
+const SUPABASE_ANON_KEY = 'YOUR_ANON_KEY';
+const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+const loginView = document.getElementById('loginView');
+const mainView = document.getElementById('mainView');
+
+document.getElementById('loginBtn').onclick = async () => {
+  const email = document.getElementById('email').value.trim();
+  const password = document.getElementById('password').value;
+  const errBox = document.getElementById('loginErr');
+  const { error } = await sb.auth.signInWithPassword({ email, password });
+  if (error) { errBox.textContent = error.message; return; }
+  boot();
+};
+document.getElementById('signout').onclick = async () => { await sb.auth.signOut(); location.reload(); };
+
+document.getElementById('f_plan').onchange = (e) => {
+  document.getElementById('monthlyFields').style.display = e.target.value === 'monthly' ? 'block' : 'none';
+  document.getElementById('perVisitFields').style.display = e.target.value === 'per_visit' ? 'block' : 'none';
+};
+
+async function boot(){
+  const { data: { session } } = await sb.auth.getSession();
+  if (!session){ return; }
+  loginView.classList.add('hidden');
+  mainView.classList.remove('hidden');
+  loadMembers();
+}
+
+document.getElementById('addBtn').onclick = async () => {
+  const errBox = document.getElementById('addErr');
+  errBox.textContent = '';
+  const plan = document.getElementById('f_plan').value;
+  const payload = {
+    name: document.getElementById('f_name').value.trim(),
+    phone: document.getElementById('f_phone').value.trim(),
+    vehicle_number: document.getElementById('f_vehicle').value.trim(),
+    plan_type: plan,
+    monthly_fee: plan === 'monthly' ? parseFloat(document.getElementById('f_fee').value) || null : null,
+    valid_until: plan === 'monthly' ? oneMonthFromNow() : null,
+    per_visit_rate: plan === 'per_visit' ? parseFloat(document.getElementById('f_rate').value) || null : null
+  };
+  if (!payload.name || !payload.phone || !payload.vehicle_number){
+    errBox.textContent = 'Name, phone and vehicle number are required.';
+    return;
+  }
+  const { error } = await sb.from('members').insert(payload);
+  if (error){ errBox.textContent = error.message; return; }
+  ['f_name','f_phone','f_vehicle','f_fee','f_rate'].forEach(id => document.getElementById(id).value = '');
+  loadMembers();
+};
+
+function oneMonthFromNow(){
+  const d = new Date(); d.setMonth(d.getMonth() + 1);
+  return d.toISOString().slice(0,10);
+}
+
+async function loadMembers(){
+  const { data: members, error } = await sb.from('members').select('*').order('created_at', { ascending: false });
+  const tbody = document.getElementById('memberRows');
+  tbody.innerHTML = '';
+  if (error){ tbody.innerHTML = `<tr><td colspan="6">Error loading members</td></tr>`; return; }
+
+  members.forEach(m => {
+    const lapsed = m.plan_type === 'monthly' && (m.payment_status === 'lapsed' || (m.valid_until && new Date(m.valid_until) < new Date()));
+    const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(m.id)}`;
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td>${escapeHtml(m.name)}</td>
+      <td>${escapeHtml(m.vehicle_number)}</td>
+      <td>${m.plan_type === 'monthly' ? 'Monthly' : 'Per-visit'}</td>
+      <td>${lapsed ? '<span class="pill bad">Lapsed</span>' : '<span class="pill ok">Active</span>'}</td>
+      <td><a class="qrlink" href="${qrUrl}" target="_blank">View QR</a></td>
+      <td>${m.plan_type === 'monthly' ? `<button class="btn" data-id="${m.id}" data-action="renew" style="background:none;border:1px solid #3a3f4a;color:var(--text-dim);padding:5px 10px;font-size:12px;">Renew</button>` : ''}</td>
+    `;
+    tbody.appendChild(tr);
+  });
+
+  tbody.querySelectorAll('[data-action="renew"]').forEach(btn => {
+    btn.onclick = async () => {
+      await sb.from('members').update({ valid_until: oneMonthFromNow(), payment_status: 'active' }).eq('id', btn.dataset.id);
+      loadMembers();
+    };
+  });
+}
+
+function escapeHtml(s){
+  return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+boot();
+</script>
+</body>
+</html>
