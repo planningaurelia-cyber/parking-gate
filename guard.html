@@ -148,13 +148,11 @@
     <button id="signout" class="hidden">Sign out</button>
   </div>
 
-  <!-- LOGIN -->
+  <!-- NAME PROMPT (no login, just identifies who's on duty) -->
   <div class="login" id="loginView">
-    <h2 class="display" style="margin:0 0 6px;">Guard sign-in</h2>
-    <input type="email" id="email" placeholder="email">
-    <input type="password" id="password" placeholder="password">
-    <button class="btn btn-go" id="loginBtn">Sign in</button>
-    <div class="err" id="loginErr"></div>
+    <h2 class="display" style="margin:0 0 6px;">Who's on duty?</h2>
+    <input type="text" id="guardName" placeholder="Your name">
+    <button class="btn btn-go" id="startBtn">Start scanning</button>
   </div>
 
   <!-- MAIN APP -->
@@ -194,29 +192,31 @@ const barrierStage = document.getElementById('barrierStage');
 let html5QrCode;
 let scanning = false;
 let busy = false; // prevents double-processing the same scan
+let currentGuardName = '';
 
-// ---------------- AUTH ----------------
-document.getElementById('loginBtn').onclick = async () => {
-  const email = document.getElementById('email').value.trim();
-  const password = document.getElementById('password').value;
-  const errBox = document.getElementById('loginErr');
-  errBox.textContent = '';
-  const { error } = await sb.auth.signInWithPassword({ email, password });
-  if (error) { errBox.textContent = error.message; return; }
-  await boot();
+// ---------------- NAME PROMPT (no login) ----------------
+document.getElementById('startBtn').onclick = () => {
+  const name = document.getElementById('guardName').value.trim();
+  if (!name) return;
+  currentGuardName = name;
+  localStorage.setItem('guardName', name);
+  boot();
 };
 
-signoutBtn.onclick = async () => {
-  await sb.auth.signOut();
+signoutBtn.onclick = () => {
+  localStorage.removeItem('guardName');
   location.reload();
 };
 
-async function boot(){
-  const { data: { session } } = await sb.auth.getSession();
-  if (!session){ loginView.classList.remove('hidden'); mainView.classList.add('hidden'); return; }
-
-  const { data: staffRow } = await sb.from('staff').select('role,name').eq('user_id', session.user.id).single();
-  guardLabel.textContent = staffRow?.name ? `${staffRow.name} · on duty` : 'Parking Control';
+function boot(){
+  const savedName = localStorage.getItem('guardName');
+  if (!savedName && !currentGuardName){
+    loginView.classList.remove('hidden');
+    mainView.classList.add('hidden');
+    return;
+  }
+  currentGuardName = currentGuardName || savedName;
+  guardLabel.textContent = `${currentGuardName} · on duty`;
 
   loginView.classList.add('hidden');
   mainView.classList.remove('hidden');
@@ -292,7 +292,8 @@ async function handleMember(memberId){
 
     const { error: insErr } = await sb.from('parking_sessions').insert({
       member_id: member.id,
-      amount_due: member.plan_type === 'per_visit' ? member.per_visit_rate : null
+      amount_due: member.plan_type === 'per_visit' ? member.per_visit_rate : null,
+      guard_notes: `Checked in by ${currentGuardName}`
     });
 
     if (insErr){
@@ -314,6 +315,7 @@ async function handleMember(memberId){
 async function closeSession(sessionId, extra){
   await sb.from('parking_sessions').update({
     checked_out_at: new Date().toISOString(),
+    guard_notes: `Checked out by ${currentGuardName}`,
     ...extra
   }).eq('id', sessionId);
 }
