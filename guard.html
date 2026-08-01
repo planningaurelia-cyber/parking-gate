@@ -108,7 +108,7 @@
     </div>
     <div class="stat">
       <div class="num" id="todayCount">–</div>
-      <div class="lbl">checked in today</div>
+      <div class="lbl">present now</div>
     </div>
   </div>
 
@@ -223,10 +223,13 @@ function exitMode(){
 // ---------------- SCANNER ----------------
 function startScanner(){
   if (scanning) return;
-  html5QrCode = new Html5Qrcode('reader');
+  html5QrCode = new Html5Qrcode('reader', { experimentalFeatures: { useBarCodeDetectorIfSupported: true } });
   html5QrCode.start(
-    { facingMode: 'environment' },
-    { fps: 10, qrbox: { width: 240, height: 240 } },
+    {
+      facingMode: 'environment',
+      advanced: [{ focusMode: 'continuous' }]
+    },
+    { fps: 20, qrbox: { width: 220, height: 220 }, disableFlip: true },
     onScan, () => {}
   ).then(() => scanning = true);
 }
@@ -240,6 +243,7 @@ async function onScan(code){
   if (busy) return;
   busy = true;
   pauseScanner();
+  playBeep();
   await routeScan(code.trim());
 }
 
@@ -452,10 +456,9 @@ function formatDuration(startIso){
 }
 
 async function refreshTodayCount(){
-  const startOfDay = new Date(); startOfDay.setHours(0,0,0,0);
   const { count } = await sb.from('parking_sessions')
     .select('id', { count: 'exact', head: true })
-    .gte('checked_in_at', startOfDay.toISOString());
+    .is('checked_out_at', null);
   todayCountEl.textContent = count ?? '0';
 }
 
@@ -464,7 +467,6 @@ function flashBarrier(state){
   if (state === 'go'){
     barrierStage.classList.add('open');
     caption.textContent = 'Clear';
-    playBeep();
     setTimeout(() => barrierStage.classList.remove('open'), 2200);
   } else {
     barrierStage.classList.add('stop');
