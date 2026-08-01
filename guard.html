@@ -203,18 +203,19 @@ document.querySelectorAll('.mode-btn').forEach(btn => {
 });
 document.getElementById('cancelBtn').onclick = exitMode;
 
-function enterMode(mode){
+async function enterMode(mode){
   currentMode = mode;
   modeLabel.textContent = mode === 'checkin' ? 'Check In' : mode === 'checkout' ? 'Check Out' : 'Recharge Pass';
   modeSelect.classList.add('hidden');
   scanScreen.classList.remove('hidden');
   resetResult();
+  await stopScanner(); // ensure any previous stream is fully closed first
   startScanner();
 }
 
-function exitMode(){
+async function exitMode(){
   currentMode = null;
-  stopScanner();
+  await stopScanner();
   scanScreen.classList.add('hidden');
   modeSelect.classList.remove('hidden');
   resetResult();
@@ -223,6 +224,7 @@ function exitMode(){
 // ---------------- SCANNER ----------------
 function startScanner(){
   if (scanning) return;
+  caption.textContent = 'Starting camera…';
   html5QrCode = new Html5Qrcode('reader', { experimentalFeatures: { useBarCodeDetectorIfSupported: true } });
   html5QrCode.start(
     {
@@ -231,10 +233,18 @@ function startScanner(){
     },
     { fps: 20, qrbox: { width: 220, height: 220 }, disableFlip: true },
     onScan, () => {}
-  ).then(() => scanning = true);
+  ).then(() => {
+    scanning = true;
+    caption.textContent = 'Point camera at the QR code';
+  }).catch(err => {
+    caption.textContent = `Camera error: ${err?.message || err}`;
+  });
 }
 function stopScanner(){
-  if (scanning && html5QrCode){ html5QrCode.stop().then(() => scanning = false).catch(() => {}); }
+  if (scanning && html5QrCode){
+    return html5QrCode.stop().then(() => { scanning = false; }).catch(() => { scanning = false; });
+  }
+  return Promise.resolve();
 }
 function pauseScanner(){ if (scanning && html5QrCode) html5QrCode.pause(true); }
 function resumeScanner(){ if (scanning && html5QrCode) html5QrCode.resume(); }
