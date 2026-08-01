@@ -10,126 +10,86 @@
 <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
 <style>
   :root{
-    --ink:#14161a;
-    --panel:#1d2027;
-    --panel-2:#252932;
-    --hazard:#f4b400;
-    --go:#2fb872;
-    --stop:#e5484d;
-    --text:#f2f0ea;
-    --text-dim:#8b909c;
-    --radius:14px;
+    --ink:#14161a; --panel:#1d2027; --panel-2:#252932;
+    --hazard:#f4b400; --go:#2fb872; --stop:#e5484d;
+    --text:#f2f0ea; --text-dim:#8b909c; --radius:14px;
   }
   *{box-sizing:border-box;}
-  html,body{
-    margin:0;height:100%;
-    background:var(--ink);
-    color:var(--text);
-    font-family:'JetBrains Mono',monospace;
-    -webkit-tap-highlight-color:transparent;
-    overscroll-behavior:none;
-  }
+  html,body{margin:0;height:100%;background:var(--ink);color:var(--text);
+    font-family:'JetBrains Mono',monospace;-webkit-tap-highlight-color:transparent;overscroll-behavior:none;}
   h1,h2,.display{font-family:'Oswald',sans-serif;}
-
   .app{max-width:480px;margin:0 auto;min-height:100%;display:flex;flex-direction:column;}
 
-  /* Top bar with hazard stripe */
-  .topbar{
-    position:relative;
-    padding:18px 20px 16px;
-    background:var(--panel);
+  .topbar{position:relative;padding:18px 20px 16px;background:var(--panel);
     border-bottom:3px solid transparent;
     border-image:repeating-linear-gradient(135deg,var(--hazard) 0 14px,var(--ink) 14px 28px) 3;
-    display:flex;align-items:center;justify-content:space-between;
-  }
+    display:flex;align-items:center;justify-content:space-between;}
   .topbar .title{font-size:20px;font-weight:600;letter-spacing:0.5px;}
   .topbar .sub{color:var(--text-dim);font-size:12px;margin-top:2px;}
-  #signout{
-    background:none;border:1px solid #3a3f4a;color:var(--text-dim);
-    font-family:inherit;font-size:11px;padding:6px 10px;border-radius:8px;cursor:pointer;
-  }
+  .topbar .stat{text-align:right;}
+  .topbar .stat .num{font-family:'Oswald',sans-serif;font-size:22px;font-weight:600;color:var(--hazard);}
+  .topbar .stat .lbl{font-size:10px;color:var(--text-dim);text-transform:uppercase;letter-spacing:0.4px;}
+  #signout{background:none;border:1px solid #3a3f4a;color:var(--text-dim);
+    font-family:inherit;font-size:11px;padding:6px 10px;border-radius:8px;cursor:pointer;margin-top:6px;}
 
-  /* Scanner viewport */
-  .scan-wrap{
-    position:relative;
-    margin:20px 20px 0;
-    border-radius:var(--radius);
-    overflow:hidden;
-    background:#000;
-    aspect-ratio:1/1;
-  }
+  /* Mode select screen */
+  .mode-select{padding:24px 20px;display:flex;flex-direction:column;gap:12px;}
+  .mode-btn{padding:22px;border-radius:var(--radius);border:none;font-family:'Oswald',sans-serif;
+    font-size:18px;font-weight:600;letter-spacing:0.3px;cursor:pointer;text-align:left;position:relative;}
+  .mode-btn small{display:block;font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:400;
+    margin-top:4px;opacity:0.75;letter-spacing:0;text-transform:none;}
+  .mode-btn.checkin{background:var(--go);color:#04140c;}
+  .mode-btn.checkout{background:var(--stop);color:#1a0505;}
+  .mode-btn.recharge{background:var(--hazard);color:#2a1e00;}
+
+  /* Scan header with cancel */
+  .scan-header{display:flex;align-items:center;justify-content:space-between;padding:16px 20px 0;}
+  .scan-header .mode-label{font-family:'Oswald',sans-serif;font-size:15px;font-weight:600;letter-spacing:0.3px;}
+  .cancel-btn{background:none;border:1px solid #3a3f4a;color:var(--text-dim);width:32px;height:32px;
+    border-radius:50%;cursor:pointer;font-size:16px;line-height:1;}
+
+  .scan-wrap{position:relative;margin:14px 20px 0;border-radius:var(--radius);overflow:hidden;
+    background:#000;aspect-ratio:1/1;}
   #reader{width:100%;height:100%;}
   #reader video{object-fit:cover;width:100%!important;height:100%!important;}
 
-  /* Boom barrier — the signature element */
-  .barrier-stage{
-    position:relative;
-    margin:22px 20px 0;
-    height:120px;
-    background:var(--panel);
-    border-radius:var(--radius);
-    overflow:hidden;
-    display:flex;align-items:flex-end;justify-content:center;
-    padding-bottom:14px;
-  }
-  .barrier-post{
-    position:absolute;bottom:0;left:50%;transform:translateX(-50%);
-    width:14px;height:60px;background:var(--panel-2);border-radius:4px 4px 0 0;
-  }
-  .barrier-arm{
-    position:absolute;
-    bottom:56px;left:50%;
-    width:150px;height:14px;
-    transform-origin:8px center;
-    transform:translateX(-8px) rotate(0deg);
-    border-radius:6px;
+  .barrier-stage{position:relative;margin:16px 20px 0;height:100px;background:var(--panel);
+    border-radius:var(--radius);overflow:hidden;display:flex;align-items:flex-end;justify-content:center;padding-bottom:10px;}
+  .barrier-post{position:absolute;bottom:0;left:50%;transform:translateX(-50%);
+    width:14px;height:50px;background:var(--panel-2);border-radius:4px 4px 0 0;}
+  .barrier-arm{position:absolute;bottom:46px;left:50%;width:150px;height:14px;
+    transform-origin:8px center;transform:translateX(-8px) rotate(0deg);border-radius:6px;
     background:repeating-linear-gradient(90deg,var(--hazard) 0 18px,var(--ink) 18px 24px);
-    transition:transform .55s cubic-bezier(.34,1.56,.64,1);
-    box-shadow:0 2px 8px rgba(0,0,0,.4);
-  }
+    transition:transform .55s cubic-bezier(.34,1.56,.64,1);box-shadow:0 2px 8px rgba(0,0,0,.4);}
   .barrier-stage.open .barrier-arm{transform:translateX(-8px) rotate(-78deg);}
   .barrier-stage.stop .barrier-arm{transform:translateX(-8px) rotate(0deg);}
 
-  .status-caption{
-    text-align:center;font-family:'Oswald',sans-serif;font-size:15px;
-    color:var(--text-dim);padding:14px 20px 0;letter-spacing:0.3px;
-  }
+  .status-caption{text-align:center;font-family:'Oswald',sans-serif;font-size:14px;
+    color:var(--text-dim);padding:12px 20px 0;letter-spacing:0.3px;}
 
-  /* Result card */
-  .result{
-    margin:16px 20px 20px;
-    background:var(--panel);
-    border-radius:var(--radius);
-    padding:18px;
-    display:none;
-  }
+  .result{margin:14px 20px 20px;background:var(--panel);border-radius:var(--radius);padding:18px;display:none;}
   .result.show{display:block;animation:rise .25s ease;}
   @keyframes rise{from{opacity:0;transform:translateY(8px);}to{opacity:1;transform:translateY(0);}}
   .result .name{font-family:'Oswald',sans-serif;font-size:22px;font-weight:600;}
   .result .meta{color:var(--text-dim);font-size:13px;margin-top:2px;}
-  .flag{
-    display:inline-block;margin-top:10px;padding:4px 10px;border-radius:20px;
-    font-size:11px;font-weight:600;letter-spacing:0.4px;text-transform:uppercase;
-  }
+  .flag{display:inline-block;margin-top:10px;padding:4px 10px;border-radius:20px;
+    font-size:11px;font-weight:600;letter-spacing:0.4px;text-transform:uppercase;}
   .flag.ok{background:rgba(47,184,114,.15);color:var(--go);}
   .flag.bad{background:rgba(229,72,77,.15);color:var(--stop);}
 
-  .checkout-form{margin-top:14px;padding-top:14px;border-top:1px solid #33384280;}
-  .checkout-form label{font-size:12px;color:var(--text-dim);display:block;margin-bottom:6px;}
-  .checkout-form input, .checkout-form select{
-    width:100%;padding:10px 12px;border-radius:8px;border:1px solid #3a3f4a;
-    background:var(--panel-2);color:var(--text);font-family:inherit;font-size:15px;margin-bottom:10px;
-  }
-  .btn{
-    width:100%;padding:13px;border-radius:10px;border:none;font-family:'Oswald',sans-serif;
-    font-size:15px;font-weight:600;letter-spacing:0.3px;cursor:pointer;
-  }
+  .amount-big{font-family:'Oswald',sans-serif;font-size:36px;font-weight:700;margin:10px 0 2px;color:var(--hazard);}
+
+  .form-block{margin-top:14px;padding-top:14px;border-top:1px solid #33384280;}
+  .form-block label{font-size:12px;color:var(--text-dim);display:block;margin-bottom:6px;}
+  .form-block input, .form-block select{width:100%;padding:10px 12px;border-radius:8px;border:1px solid #3a3f4a;
+    background:var(--panel-2);color:var(--text);font-family:inherit;font-size:15px;margin-bottom:10px;}
+  .btn{width:100%;padding:13px;border-radius:10px;border:none;font-family:'Oswald',sans-serif;
+    font-size:15px;font-weight:600;letter-spacing:0.3px;cursor:pointer;}
   .btn-go{background:var(--go);color:#04140c;}
   .btn-stop{background:var(--stop);color:#1a0505;}
-
+  .btn-hazard{background:var(--hazard);color:#2a1e00;}
   .rescan{margin-top:10px;background:none;border:1px solid #3a3f4a;color:var(--text-dim);}
 
-  /* Login screen */
   .login{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:24px;gap:12px;}
   .login input{width:100%;max-width:280px;padding:12px;border-radius:8px;border:1px solid #3a3f4a;background:var(--panel);color:var(--text);font-family:inherit;}
   .login button{width:100%;max-width:280px;}
@@ -144,8 +104,12 @@
     <div>
       <div class="title">GATE</div>
       <div class="sub" id="guardLabel">Parking Control</div>
+      <button id="signout" class="hidden">Sign out</button>
     </div>
-    <button id="signout" class="hidden">Sign out</button>
+    <div class="stat">
+      <div class="num" id="todayCount">–</div>
+      <div class="lbl">checked in today</div>
+    </div>
   </div>
 
   <!-- NAME PROMPT (no login, just identifies who's on duty) -->
@@ -157,44 +121,62 @@
 
   <!-- MAIN APP -->
   <div id="mainView" class="hidden" style="flex:1;display:flex;flex-direction:column;">
-    <div class="scan-wrap">
-      <div id="reader"></div>
+
+    <!-- Mode select -->
+    <div class="mode-select" id="modeSelect">
+      <button class="mode-btn checkin" data-mode="checkin">Check In<small>Vehicle arriving</small></button>
+      <button class="mode-btn checkout" data-mode="checkout">Check Out<small>Vehicle leaving</small></button>
+      <button class="mode-btn recharge" data-mode="recharge">Recharge Pass<small>Extend a monthly pass</small></button>
     </div>
 
-    <div class="barrier-stage" id="barrierStage">
-      <div class="barrier-post"></div>
-      <div class="barrier-arm" id="barrierArm"></div>
+    <!-- Scan screen (hidden until a mode is picked) -->
+    <div id="scanScreen" class="hidden" style="flex:1;display:flex;flex-direction:column;">
+      <div class="scan-header">
+        <div class="mode-label" id="modeLabel">Check In</div>
+        <button class="cancel-btn" id="cancelBtn">✕</button>
+      </div>
+      <div class="scan-wrap"><div id="reader"></div></div>
+      <div class="barrier-stage" id="barrierStage">
+        <div class="barrier-post"></div>
+        <div class="barrier-arm" id="barrierArm"></div>
+      </div>
+      <div class="status-caption" id="caption">Point camera at the QR code</div>
+      <div class="result" id="resultCard"></div>
     </div>
-    <div class="status-caption" id="caption">Point camera at member's QR</div>
-
-    <div class="result" id="resultCard"></div>
   </div>
 
 </div>
 
 <script>
 // ---------------------------------------------------------------
-// CONFIG — fill these in with your Supabase project details
+// CONFIG
 // ---------------------------------------------------------------
 const SUPABASE_URL = 'https://zrmpphpdfiaznxrqhxdi.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InpybXBwaHBkZmlhem54cnFoeGRpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODU1NTE1MDIsImV4cCI6MjEwMTEyNzUwMn0.V6K4lOvD_-K7C0jBytUBDbNdVf5aZXKDgnlybNywV94';
-
 const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+// Pricing: ₹25 flat for up to 6h. Beyond that, any partial hour rounds up, ₹5/hr.
+const BASE_FEE = 25, BASE_HOURS = 6, HOURLY_RATE = 5;
 
 const loginView = document.getElementById('loginView');
 const mainView = document.getElementById('mainView');
+const modeSelect = document.getElementById('modeSelect');
+const scanScreen = document.getElementById('scanScreen');
+const modeLabel = document.getElementById('modeLabel');
 const guardLabel = document.getElementById('guardLabel');
 const signoutBtn = document.getElementById('signout');
 const caption = document.getElementById('caption');
 const resultCard = document.getElementById('resultCard');
 const barrierStage = document.getElementById('barrierStage');
+const todayCountEl = document.getElementById('todayCount');
 
-let html5QrCode;
-let scanning = false;
-let busy = false; // prevents double-processing the same scan
+let html5QrCode, scanning = false, busy = false;
 let currentGuardName = '';
+let currentMode = null; // 'checkin' | 'checkout' | 'recharge'
 
-// ---------------- NAME PROMPT (no login) ----------------
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+// ---------------- NAME PROMPT ----------------
 document.getElementById('startBtn').onclick = () => {
   const name = document.getElementById('guardName').value.trim();
   if (!name) return;
@@ -202,26 +184,42 @@ document.getElementById('startBtn').onclick = () => {
   localStorage.setItem('guardName', name);
   boot();
 };
-
-signoutBtn.onclick = () => {
-  localStorage.removeItem('guardName');
-  location.reload();
-};
+signoutBtn.onclick = () => { localStorage.removeItem('guardName'); location.reload(); };
 
 function boot(){
   const savedName = localStorage.getItem('guardName');
   if (!savedName && !currentGuardName){
-    loginView.classList.remove('hidden');
-    mainView.classList.add('hidden');
-    return;
+    loginView.classList.remove('hidden'); mainView.classList.add('hidden'); return;
   }
   currentGuardName = currentGuardName || savedName;
   guardLabel.textContent = `${currentGuardName} · on duty`;
-
   loginView.classList.add('hidden');
   mainView.classList.remove('hidden');
   signoutBtn.classList.remove('hidden');
+  refreshTodayCount();
+}
+
+// ---------------- MODE SELECT ----------------
+document.querySelectorAll('.mode-btn').forEach(btn => {
+  btn.onclick = () => enterMode(btn.dataset.mode);
+});
+document.getElementById('cancelBtn').onclick = exitMode;
+
+function enterMode(mode){
+  currentMode = mode;
+  modeLabel.textContent = mode === 'checkin' ? 'Check In' : mode === 'checkout' ? 'Check Out' : 'Recharge Pass';
+  modeSelect.classList.add('hidden');
+  scanScreen.classList.remove('hidden');
+  resetResult();
   startScanner();
+}
+
+function exitMode(){
+  currentMode = null;
+  stopScanner();
+  scanScreen.classList.add('hidden');
+  modeSelect.classList.remove('hidden');
+  resetResult();
 }
 
 // ---------------- SCANNER ----------------
@@ -231,87 +229,213 @@ function startScanner(){
   html5QrCode.start(
     { facingMode: 'environment' },
     { fps: 10, qrbox: { width: 240, height: 240 } },
-    onScan,
-    () => {}
+    onScan, () => {}
   ).then(() => scanning = true);
 }
-
-function pauseScanner(){
-  if (scanning && html5QrCode){ html5QrCode.pause(true); }
+function stopScanner(){
+  if (scanning && html5QrCode){ html5QrCode.stop().then(() => scanning = false).catch(() => {}); }
 }
-function resumeScanner(){
-  if (scanning && html5QrCode){ html5QrCode.resume(); }
-}
+function pauseScanner(){ if (scanning && html5QrCode) html5QrCode.pause(true); }
+function resumeScanner(){ if (scanning && html5QrCode) html5QrCode.resume(); }
 
-async function onScan(memberId){
+async function onScan(code){
   if (busy) return;
   busy = true;
   pauseScanner();
-  await handleMember(memberId.trim());
+  await routeScan(code.trim());
 }
 
-// ---------------- CORE LOGIC ----------------
-async function handleMember(memberId){
-  caption.textContent = 'Looking up member…';
+async function routeScan(code){
+  caption.textContent = 'Looking up…';
+  const member = await findMember(code);
 
-  const { data: member, error } = await sb.from('members').select('*').eq('id', memberId).single();
-  if (error || !member){
-    flashBarrier('stop');
-    showResult({ name: 'Unrecognized QR', meta: 'This code does not match any member.', flagBad: true });
-    return;
+  if (currentMode === 'checkin') return handleCheckIn(code, member);
+  if (currentMode === 'checkout') return handleCheckOut(member);
+  if (currentMode === 'recharge') return handleRecharge(member);
+}
+
+async function findMember(code){
+  if (UUID_RE.test(code)){
+    const { data } = await sb.from('members').select('*').eq('id', code).maybeSingle();
+    if (data) return data;
   }
+  const { data } = await sb.from('members').select('*').eq('card_code', code).maybeSingle();
+  return data || null;
+}
 
-  if (!member.is_active){
-    flashBarrier('stop');
-    showResult({ name: member.name, meta: 'Membership deactivated', flagBad: true });
-    return;
-  }
-
-  // Is there an open session for this member?
-  const { data: openSession } = await sb.from('parking_sessions')
-    .select('*').eq('member_id', member.id).is('checked_out_at', null)
-    .maybeSingle();
-
-  if (openSession){
-    // ---- CHECKOUT ----
-    if (member.plan_type === 'per_visit'){
-      showCheckoutForm(member, openSession);
-    } else {
-      await closeSession(openSession.id, {});
-      flashBarrier('go');
-      showResult({ name: member.name, meta: `Checked out · ${formatDuration(openSession.checked_in_at)}` });
+// ---------------- CHECK IN ----------------
+async function handleCheckIn(code, member){
+  if (member){
+    if (!member.is_active){
+      flashBarrier('stop'); showResult({ name: member.name, meta: 'Membership deactivated', flagBad: true }); return;
     }
-  } else {
-    // ---- CHECK-IN ----
-    let flagBad = false, note = '';
-    if (member.plan_type === 'monthly'){
-      const lapsed = member.payment_status === 'lapsed' ||
-                     (member.valid_until && new Date(member.valid_until) < new Date());
-      if (lapsed){ flagBad = true; note = 'Payment lapsed / plan expired'; }
+    const { data: openSession } = await sb.from('parking_sessions')
+      .select('id').eq('member_id', member.id).is('checked_out_at', null).maybeSingle();
+    if (openSession){
+      flashBarrier('stop');
+      showResult({ name: member.name, meta: 'Already checked in — use Check Out instead', flagBad: true });
+      return;
+    }
+  }
+
+  if (member && member.plan_type === 'monthly'){
+    const lapsed = member.payment_status === 'lapsed' || (member.valid_until && new Date(member.valid_until) < new Date());
+    await sb.from('parking_sessions').insert({
+      member_id: member.id, guard_notes: `Checked in by ${currentGuardName}`
+    });
+    flashBarrier(lapsed ? 'stop' : 'go');
+    showResult({
+      name: member.name, meta: `Checked in · Monthly pass`,
+      flagBad: lapsed, badNote: lapsed ? 'Payment lapsed / plan expired' : ''
+    });
+    refreshTodayCount();
+    return;
+  }
+
+  // Per-visit card (existing or brand new) — ask for last-4 vehicle digits
+  showVehicleEntryForm(code, member);
+}
+
+function showVehicleEntryForm(code, existingMember){
+  caption.textContent = 'Enter vehicle digits to check in';
+  resultCard.innerHTML = `
+    <div class="name">Day-pass card</div>
+    <div class="meta">Card: ${escapeHtml(code)}</div>
+    <div class="form-block">
+      <label>Last 4 digits of vehicle number</label>
+      <input type="text" id="vehInput" maxlength="4" inputmode="numeric" placeholder="e.g. 4821">
+      <button class="btn btn-go" id="confirmCheckin">Check in</button>
+    </div>
+  `;
+  resultCard.classList.add('show');
+
+  document.getElementById('confirmCheckin').onclick = async () => {
+    const veh = document.getElementById('vehInput').value.trim();
+    if (!veh){ return; }
+
+    let memberId = existingMember ? existingMember.id : null;
+    if (!memberId){
+      const { data: newMember, error } = await sb.from('members').insert({
+        name: 'Day Pass', plan_type: 'per_visit', card_code: code
+      }).select().single();
+      if (error){
+        flashBarrier('stop'); showResult({ name:'Error', meta:'Could not register card — try again', flagBad:true }); return;
+      }
+      memberId = newMember.id;
     }
 
     const { error: insErr } = await sb.from('parking_sessions').insert({
-      member_id: member.id,
-      amount_due: member.plan_type === 'per_visit' ? member.per_visit_rate : null,
-      guard_notes: `Checked in by ${currentGuardName}`
+      member_id: memberId, vehicle_number: veh, guard_notes: `Checked in by ${currentGuardName}`
     });
-
     if (insErr){
-      flashBarrier('stop');
-      showResult({ name: member.name, meta: 'Could not open session — try again', flagBad: true });
-      return;
+      flashBarrier('stop'); showResult({ name:'Error', meta:'Could not open session — try again', flagBad:true }); return;
     }
-
-    flashBarrier(flagBad ? 'stop' : 'go');
-    showResult({
-      name: member.name,
-      meta: `Checked in · ${member.vehicle_number} · ${member.plan_type === 'monthly' ? 'Monthly pass' : 'Pay-per-visit'}`,
-      flagBad,
-      badNote: note
-    });
-  }
+    flashBarrier('go');
+    showResult({ name: `Vehicle …${veh}`, meta: 'Checked in · Pay-per-visit' });
+    refreshTodayCount();
+  };
 }
 
+// ---------------- CHECK OUT ----------------
+async function handleCheckOut(member){
+  if (!member){
+    flashBarrier('stop'); showResult({ name:'Unrecognized QR', meta:'No matching card or member', flagBad:true }); return;
+  }
+  const { data: openSession } = await sb.from('parking_sessions')
+    .select('*').eq('member_id', member.id).is('checked_out_at', null).maybeSingle();
+
+  if (!openSession){
+    flashBarrier('stop');
+    showResult({ name: member.name, meta: 'No active session — did you mean Check In?', flagBad: true });
+    return;
+  }
+
+  if (member.plan_type === 'monthly'){
+    await closeSession(openSession.id, {});
+    flashBarrier('go');
+    showResult({ name: member.name, meta: `Checked out · ${formatDuration(openSession.checked_in_at)}` });
+    refreshTodayCount();
+    return;
+  }
+
+  // per_visit — calculate amount
+  const { amount, hoursLabel } = calcAmount(openSession.checked_in_at);
+  caption.textContent = 'Confirm amount to check out';
+  resultCard.innerHTML = `
+    <div class="name">Vehicle ${openSession.vehicle_number ? '…' + escapeHtml(openSession.vehicle_number) : ''}</div>
+    <div class="meta">${hoursLabel}</div>
+    <div class="amount-big">₹${amount}</div>
+    <div class="form-block">
+      <label>Amount collected (₹)</label>
+      <input type="number" id="amtInput" value="${amount}" inputmode="numeric">
+      <label>Payment mode</label>
+      <select id="modeInput"><option value="upi">UPI</option><option value="cash">Cash</option></select>
+      <button class="btn btn-stop" id="confirmCheckout">Confirm checkout</button>
+    </div>
+  `;
+  resultCard.classList.add('show');
+
+  document.getElementById('confirmCheckout').onclick = async () => {
+    const finalAmount = parseFloat(document.getElementById('amtInput').value) || 0;
+    const mode = document.getElementById('modeInput').value;
+    await closeSession(openSession.id, { amount_collected: finalAmount, payment_mode: mode });
+    flashBarrier('go');
+    showResult({ name: 'Checked out', meta: `₹${finalAmount} via ${mode} · ${hoursLabel}` });
+    refreshTodayCount();
+  };
+}
+
+function calcAmount(checkedInIso){
+  const ms = Date.now() - new Date(checkedInIso).getTime();
+  const hours = ms / (1000 * 60 * 60);
+  let amount;
+  if (hours <= BASE_HOURS){
+    amount = BASE_FEE;
+  } else {
+    const extraHours = Math.ceil(hours - BASE_HOURS);
+    amount = BASE_FEE + extraHours * HOURLY_RATE;
+  }
+  return { amount, hoursLabel: `In for ${formatDuration(checkedInIso)}` };
+}
+
+// ---------------- RECHARGE ----------------
+async function handleRecharge(member){
+  if (!member || member.plan_type !== 'monthly'){
+    flashBarrier('stop');
+    showResult({ name: member ? member.name : 'Unrecognized QR', meta: 'Not a monthly pass', flagBad: true });
+    return;
+  }
+  const today = new Date().toISOString().slice(0,10);
+  const nextMonth = new Date(); nextMonth.setMonth(nextMonth.getMonth() + 1);
+  const defaultTo = nextMonth.toISOString().slice(0,10);
+
+  caption.textContent = 'Select new validity period';
+  resultCard.innerHTML = `
+    <div class="name">${escapeHtml(member.name)}</div>
+    <div class="meta">Currently valid until ${member.valid_until || '—'}</div>
+    <div class="form-block">
+      <label>Valid from</label>
+      <input type="date" id="fromInput" value="${today}">
+      <label>Valid until</label>
+      <input type="date" id="toInput" value="${defaultTo}">
+      <button class="btn btn-hazard" id="confirmRecharge">Confirm recharge</button>
+    </div>
+  `;
+  resultCard.classList.add('show');
+
+  document.getElementById('confirmRecharge').onclick = async () => {
+    const from = document.getElementById('fromInput').value;
+    const to = document.getElementById('toInput').value;
+    if (!from || !to) return;
+    await sb.from('members').update({
+      valid_from: from, valid_until: to, payment_status: 'active'
+    }).eq('id', member.id);
+    flashBarrier('go');
+    showResult({ name: member.name, meta: `Recharged · valid till ${to}` });
+  };
+}
+
+// ---------------- SHARED ----------------
 async function closeSession(sessionId, extra){
   await sb.from('parking_sessions').update({
     checked_out_at: new Date().toISOString(),
@@ -326,12 +450,19 @@ function formatDuration(startIso){
   return h > 0 ? `${h}h ${m}m` : `${m}m`;
 }
 
-// ---------------- UI HELPERS ----------------
+async function refreshTodayCount(){
+  const startOfDay = new Date(); startOfDay.setHours(0,0,0,0);
+  const { count } = await sb.from('parking_sessions')
+    .select('id', { count: 'exact', head: true })
+    .gte('checked_in_at', startOfDay.toISOString());
+  todayCountEl.textContent = count ?? '0';
+}
+
 function flashBarrier(state){
   barrierStage.classList.remove('open','stop');
   if (state === 'go'){
     barrierStage.classList.add('open');
-    caption.textContent = 'Entry clear';
+    caption.textContent = 'Clear';
     setTimeout(() => barrierStage.classList.remove('open'), 2200);
   } else {
     barrierStage.classList.add('stop');
@@ -339,53 +470,30 @@ function flashBarrier(state){
   }
 }
 
+function resetResult(){
+  resultCard.classList.remove('show');
+  resultCard.innerHTML = '';
+  barrierStage.classList.remove('open','stop');
+  caption.textContent = 'Point camera at the QR code';
+  busy = false;
+}
+
 function showResult({ name, meta, flagBad, badNote }){
   resultCard.innerHTML = `
     <div class="name">${escapeHtml(name)}</div>
     <div class="meta">${escapeHtml(meta)}</div>
     ${flagBad ? `<span class="flag bad">${escapeHtml(badNote || 'Needs attention')}</span>` : `<span class="flag ok">Clear</span>`}
-    <button class="btn rescan" style="margin-top:14px;" onclick="reset()">Scan next</button>
+    <button class="btn rescan" style="margin-top:14px;" onclick="scanNext()">Scan next</button>
   `;
   resultCard.classList.add('show');
-}
-
-function showCheckoutForm(member, session){
-  caption.textContent = 'Collect payment to check out';
-  resultCard.innerHTML = `
-    <div class="name">${escapeHtml(member.name)}</div>
-    <div class="meta">${member.vehicle_number} · in for ${formatDuration(session.checked_in_at)}</div>
-    <div class="checkout-form">
-      <label>Amount collected (₹)</label>
-      <input type="number" id="amtInput" value="${member.per_visit_rate || ''}" inputmode="numeric">
-      <label>Payment mode</label>
-      <select id="modeInput">
-        <option value="upi">UPI</option>
-        <option value="cash">Cash</option>
-      </select>
-      <button class="btn btn-stop" id="confirmCheckout">Confirm checkout</button>
-    </div>
-  `;
-  resultCard.classList.add('show');
-
-  document.getElementById('confirmCheckout').onclick = async () => {
-    const amount = parseFloat(document.getElementById('amtInput').value) || 0;
-    const mode = document.getElementById('modeInput').value;
-    await closeSession(session.id, { amount_collected: amount, payment_mode: mode });
-    flashBarrier('go');
-    showResult({ name: member.name, meta: `Checked out · ₹${amount} via ${mode}` });
-  };
 }
 
 function escapeHtml(s){
   return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 }
 
-window.reset = function(){
-  resultCard.classList.remove('show');
-  resultCard.innerHTML = '';
-  barrierStage.classList.remove('open','stop');
-  caption.textContent = "Point camera at member's QR";
-  busy = false;
+window.scanNext = function(){
+  resetResult();
   resumeScanner();
 };
 
