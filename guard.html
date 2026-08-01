@@ -174,8 +174,6 @@ let html5QrCode, scanning = false, busy = false;
 let currentGuardName = '';
 let currentMode = null; // 'checkin' | 'checkout' | 'recharge'
 
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
 // ---------------- NAME PROMPT ----------------
 document.getElementById('startBtn').onclick = () => {
   const name = document.getElementById('guardName').value.trim();
@@ -254,13 +252,16 @@ async function routeScan(code){
   if (currentMode === 'recharge') return handleRecharge(member);
 }
 
-async function findMember(code){
-  if (UUID_RE.test(code)){
-    const { data } = await sb.from('members').select('*').eq('id', code).maybeSingle();
-    if (data) return data;
-  }
-  const { data } = await sb.from('members').select('*').eq('card_code', code).maybeSingle();
-  return data || null;
+async function findMember(rawCode){
+  const code = rawCode.replace(/[\r\n\t]/g, '').trim();
+
+  // Always try both — don't gate on regex, since a stray character
+  // would silently break the id match and mis-file a real member as unknown.
+  const { data: byId } = await sb.from('members').select('*').eq('id', code).maybeSingle();
+  if (byId) return byId;
+
+  const { data: byCard } = await sb.from('members').select('*').eq('card_code', code).maybeSingle();
+  return byCard || null;
 }
 
 // ---------------- CHECK IN ----------------
@@ -366,8 +367,8 @@ async function handleCheckOut(member){
     <div class="meta">${hoursLabel}</div>
     <div class="amount-big">₹${amount}</div>
     <div class="form-block">
-      <label>Amount collected (₹)</label>
-      <input type="number" id="amtInput" value="${amount}" inputmode="numeric">
+      <label>Amount to collect (₹)</label>
+      <input type="number" id="amtInput" value="${amount}" readonly style="opacity:0.85;">
       <label>Payment mode</label>
       <select id="modeInput"><option value="upi">UPI</option><option value="cash">Cash</option></select>
       <button class="btn btn-stop" id="confirmCheckout">Confirm checkout</button>
@@ -463,11 +464,27 @@ function flashBarrier(state){
   if (state === 'go'){
     barrierStage.classList.add('open');
     caption.textContent = 'Clear';
+    playBeep();
     setTimeout(() => barrierStage.classList.remove('open'), 2200);
   } else {
     barrierStage.classList.add('stop');
     caption.textContent = 'Flagged — guard review';
   }
+}
+
+function playBeep(){
+  try{
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = 'sine';
+    osc.frequency.value = 880;
+    gain.gain.setValueAtTime(0.15, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.18);
+    osc.connect(gain); gain.connect(ctx.destination);
+    osc.start();
+    osc.stop(ctx.currentTime + 0.18);
+  } catch(e) {}
 }
 
 function resetResult(){
