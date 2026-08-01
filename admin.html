@@ -59,6 +59,21 @@
       <button class="btn" id="signout" style="background:none;border:1px solid #3a3f4a;color:var(--text-dim);">Sign out</button>
     </div>
 
+    <div class="card" style="display:grid;grid-template-columns:repeat(3,1fr);gap:14px;text-align:center;">
+      <div>
+        <div style="font-family:'Oswald',sans-serif;font-size:28px;font-weight:600;" id="statCheckedIn">–</div>
+        <div style="font-size:11px;color:var(--text-dim);text-transform:uppercase;">Checked in today</div>
+      </div>
+      <div>
+        <div style="font-family:'Oswald',sans-serif;font-size:28px;font-weight:600;color:var(--go);" id="statPresent">–</div>
+        <div style="font-size:11px;color:var(--text-dim);text-transform:uppercase;">Present now</div>
+      </div>
+      <div>
+        <div style="font-family:'Oswald',sans-serif;font-size:28px;font-weight:600;color:var(--hazard);" id="statAmount">–</div>
+        <div style="font-size:11px;color:var(--text-dim);text-transform:uppercase;">Collected today</div>
+      </div>
+    </div>
+
     <div class="card">
       <h2>Add member</h2>
       <div class="grid2">
@@ -124,6 +139,28 @@ async function boot(){
   loginView.classList.add('hidden');
   mainView.classList.remove('hidden');
   loadMembers();
+  loadStats();
+}
+
+async function loadStats(){
+  const startOfDay = new Date(); startOfDay.setHours(0,0,0,0);
+
+  const { count: checkedIn } = await sb.from('parking_sessions')
+    .select('id', { count: 'exact', head: true })
+    .gte('checked_in_at', startOfDay.toISOString());
+
+  const { count: present } = await sb.from('parking_sessions')
+    .select('id', { count: 'exact', head: true })
+    .is('checked_out_at', null);
+
+  const { data: todaySessions } = await sb.from('parking_sessions')
+    .select('amount_collected')
+    .gte('checked_in_at', startOfDay.toISOString());
+  const totalAmount = (todaySessions || []).reduce((sum, s) => sum + (s.amount_collected || 0), 0);
+
+  document.getElementById('statCheckedIn').textContent = checkedIn ?? '0';
+  document.getElementById('statPresent').textContent = present ?? '0';
+  document.getElementById('statAmount').textContent = `₹${totalAmount}`;
 }
 
 document.getElementById('addBtn').onclick = async () => {
