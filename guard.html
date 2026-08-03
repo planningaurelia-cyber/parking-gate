@@ -244,10 +244,7 @@ function startScanner(){
   caption.textContent = 'Starting camera…';
   html5QrCode = new Html5Qrcode('reader', { experimentalFeatures: { useBarCodeDetectorIfSupported: true } });
   html5QrCode.start(
-    {
-      facingMode: 'environment',
-      advanced: [{ focusMode: 'continuous' }]
-    },
+    { facingMode: 'environment' },
     { fps: 20, qrbox: { width: 220, height: 220 }, disableFlip: true },
     onScan, () => {}
   ).then(() => {
