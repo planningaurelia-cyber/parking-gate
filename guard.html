@@ -175,8 +175,9 @@ const todayCountEl = document.getElementById('todayCount');
 
 let html5QrCode, scanning = false, busy = false;
 let currentGuardName = '';
-let currentMode = null; // 'checkin' | 'checkout' | 'recharge'
+let currentMode = null; // 'checkin' | 'checkout' | 'recharge' | 'status'
 let audioCtx = null;
+let pendingConfirmation = false; // true while a scan has been read but not yet confirmed (vehicle entry, checkout, recharge)
 
 // ---------------- NAME PROMPT ----------------
 document.getElementById('startBtn').onclick = () => {
@@ -221,7 +222,13 @@ document.querySelectorAll('.mode-btn').forEach(btn => {
     enterMode(btn.dataset.mode);
   };
 });
-document.getElementById('cancelBtn').onclick = exitMode;
+document.getElementById('cancelBtn').onclick = () => {
+  if (pendingConfirmation){
+    const leave = confirm("This scan hasn't been confirmed yet — nothing has been saved. If you leave now, this vehicle will NOT be checked in/out. Leave anyway?");
+    if (!leave) return; // stay on the form
+  }
+  exitMode();
+};
 
 async function enterMode(mode){
   currentMode = mode;
@@ -330,6 +337,7 @@ async function handleCheckIn(code, member){
 }
 
 function showVehicleEntryForm(code, existingMember){
+  pendingConfirmation = true;
   caption.textContent = 'Enter vehicle digits to check in';
   resultCard.innerHTML = `
     <div class="name">Day-pass card</div>
@@ -344,7 +352,7 @@ function showVehicleEntryForm(code, existingMember){
 
   document.getElementById('confirmCheckin').onclick = async () => {
     const veh = document.getElementById('vehInput').value.trim();
-    if (!veh){ return; }
+    if (!veh){ alert('Enter vehicle number first.'); return; }
 
     let memberId = existingMember ? existingMember.id : null;
     if (!memberId){
@@ -363,6 +371,7 @@ function showVehicleEntryForm(code, existingMember){
     if (insErr){
       flashBarrier('stop'); showResult({ name:'Error', meta:'Could not open session — try again', flagBad:true }); return;
     }
+    pendingConfirmation = false;
     flashBarrier('go');
     showResult({ name: `Vehicle …${veh}`, meta: 'Checked in · Pay-per-visit' });
     refreshTodayCount();
@@ -384,7 +393,10 @@ async function handleCheckOut(member, scannedCode){
   }
 
   if (member.plan_type === 'monthly'){
-    await closeSession(openSession.id, {});
+    const { error } = await closeSession(openSession.id, {});
+    if (error){
+      flashBarrier('stop'); showResult({ name: member.name, meta: 'Could not check out — try again', flagBad: true }); return;
+    }
     flashBarrier('go');
     showResult({ name: member.name, meta: `Checked out · ${formatDuration(openSession.checked_in_at)}` });
     refreshTodayCount();
@@ -392,6 +404,7 @@ async function handleCheckOut(member, scannedCode){
   }
 
   // per_visit — calculate amount
+  pendingConfirmation = true;
   const { amount, hoursLabel } = calcAmount(openSession.checked_in_at);
   caption.textContent = 'Confirm amount to check out';
   resultCard.innerHTML = `
@@ -411,7 +424,12 @@ async function handleCheckOut(member, scannedCode){
   document.getElementById('confirmCheckout').onclick = async () => {
     const finalAmount = parseFloat(document.getElementById('amtInput').value) || 0;
     const mode = document.getElementById('modeInput').value;
-    await closeSession(openSession.id, { amount_collected: finalAmount, payment_mode: mode });
+    const { error } = await closeSession(openSession.id, { amount_collected: finalAmount, payment_mode: mode });
+    if (error){
+      alert('Could not save checkout — check your connection and try again.');
+      return;
+    }
+    pendingConfirmation = false;
     flashBarrier('go');
     showResult({ name: 'Checked out', meta: `₹${finalAmount} via ${mode} · ${hoursLabel}` });
     refreshTodayCount();
@@ -442,6 +460,7 @@ async function handleRecharge(member, scannedCode){
   const nextMonth = new Date(); nextMonth.setMonth(nextMonth.getMonth() + 1);
   const defaultTo = nextMonth.toISOString().slice(0,10);
 
+  pendingConfirmation = true;
   caption.textContent = 'Select new validity period';
   resultCard.innerHTML = `
     <div class="name">${escapeHtml(member.name)}</div>
@@ -459,10 +478,15 @@ async function handleRecharge(member, scannedCode){
   document.getElementById('confirmRecharge').onclick = async () => {
     const from = document.getElementById('fromInput').value;
     const to = document.getElementById('toInput').value;
-    if (!from || !to) return;
-    await sb.from('members').update({
+    if (!from || !to){ alert('Pick both a start and end date first.'); return; }
+    const { error } = await sb.from('members').update({
       valid_from: from, valid_until: to, payment_status: 'active'
     }).eq('id', member.id);
+    if (error){
+      alert('Could not save recharge — check your connection and try again.');
+      return;
+    }
+    pendingConfirmation = false;
     flashBarrier('go');
     showResult({ name: member.name, meta: `Recharged · valid till ${to}` });
   };
@@ -482,14 +506,25 @@ async function handleStatus(member, scannedCode){
   let lines = [];
   if (member.plan_type === 'monthly'){
     const lapsed = member.payment_status === 'lapsed' || (member.valid_until && new Date(member.valid_until) < new Date());
-    lines.push(`Monthly pass · valid until ${member.valid_until || '—'}`);
-    if (openSession){
-      lines.push(`Currently checked in · ${formatDuration(openSession.checked_in_at)}`);
-    } else {
-      lines.push('Not currently checked in');
-    }
     flashBarrier(lapsed ? 'stop' : 'go');
-    showResult({ name: member.name, meta: lines.join(' · '), flagBad: lapsed, badNote: lapsed ? 'Payment lapsed / plan expired' : '' });
+    resultCard.innerHTML = `
+      <div class="name">${escapeHtml(member.name)}</div>
+      <div class="meta">Monthly pass</div>
+      <div class="form-block" style="border-top:none;padding-top:8px;">
+        <div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0;">
+          <span style="color:var(--text-dim);">Valid until</span>
+          <span style="font-family:'Oswald',sans-serif;font-size:18px;font-weight:600;">${member.valid_until || '—'}</span>
+        </div>
+        <div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0;">
+          <span style="color:var(--text-dim);">Right now</span>
+          <span style="font-family:'Oswald',sans-serif;font-size:18px;font-weight:600;">${openSession ? 'Inside' : 'Not inside'}</span>
+        </div>
+      </div>
+      ${lapsed ? `<span class="flag bad">Payment lapsed / plan expired</span>` : `<span class="flag ok">Clear</span>`}
+      <button class="btn rescan" style="margin-top:14px;" onclick="scanNext()">Scan next</button>
+    `;
+    resultCard.classList.add('show');
+    caption.textContent = 'Status';
     return;
   }
 
@@ -497,10 +532,23 @@ async function handleStatus(member, scannedCode){
   if (openSession){
     const { amount, hoursLabel } = calcAmount(openSession.checked_in_at);
     flashBarrier('go');
-    showResult({
-      name: `Vehicle ${openSession.vehicle_number ? '…' + openSession.vehicle_number : ''}`,
-      meta: `${hoursLabel} · would owe ₹${amount} if checked out now`
-    });
+    resultCard.innerHTML = `
+      <div class="name">Vehicle ${openSession.vehicle_number ? '…' + escapeHtml(openSession.vehicle_number) : '—'}</div>
+      <div class="meta">Currently checked in</div>
+      <div class="form-block" style="border-top:none;padding-top:8px;">
+        <div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0;">
+          <span style="color:var(--text-dim);">Time parked</span>
+          <span style="font-family:'Oswald',sans-serif;font-size:18px;font-weight:600;">${formatDuration(openSession.checked_in_at)}</span>
+        </div>
+        <div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0;">
+          <span style="color:var(--text-dim);">Amount if checkout now</span>
+          <span style="font-family:'Oswald',sans-serif;font-size:22px;font-weight:700;color:var(--hazard);">₹${amount}</span>
+        </div>
+      </div>
+      <button class="btn rescan" style="margin-top:14px;" onclick="scanNext()">Scan next</button>
+    `;
+    resultCard.classList.add('show');
+    caption.textContent = 'Status';
   } else {
     flashBarrier('go');
     showResult({ name: 'Day-pass card', meta: 'Not currently checked in' });
@@ -509,11 +557,12 @@ async function handleStatus(member, scannedCode){
 
 // ---------------- SHARED ----------------
 async function closeSession(sessionId, extra){
-  await sb.from('parking_sessions').update({
+  const { error } = await sb.from('parking_sessions').update({
     checked_out_at: new Date().toISOString(),
     guard_notes: `Checked out by ${currentGuardName}`,
     ...extra
   }).eq('id', sessionId);
+  return { error };
 }
 
 function formatDuration(startIso){
@@ -568,6 +617,7 @@ function resetResult(){
   barrierStage.classList.remove('open','stop');
   caption.textContent = 'Point camera at the QR code';
   busy = false;
+  pendingConfirmation = false;
 }
 
 function showResult({ name, meta, flagBad, badNote }){
