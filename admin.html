@@ -82,17 +82,13 @@
 
     <div class="card">
       <h2>Reports</h2>
-      <div class="grid2">
-        <div>
-          <label>View a specific day this month</label>
-          <input type="date" id="reportDate">
-          <button class="btn" id="viewDayBtn" style="background:none;border:1px solid #3a3f4a;color:var(--text);width:100%;margin-bottom:12px;">View day</button>
-        </div>
-        <div>
-          <label>View a whole month</label>
-          <input type="month" id="reportMonth">
-          <button class="btn" id="viewMonthBtn" style="background:none;border:1px solid #3a3f4a;color:var(--text);width:100%;margin-bottom:12px;">View month</button>
-        </div>
+      <div class="grid2" style="align-items:end;">
+        <label>View a specific day this month</label>
+        <label>View a whole month</label>
+        <input type="date" id="reportDate">
+        <input type="month" id="reportMonth">
+        <button class="btn" id="viewDayBtn" style="background:none;border:1px solid #3a3f4a;color:var(--text);width:100%;margin-bottom:12px;">View day</button>
+        <button class="btn" id="viewMonthBtn" style="background:none;border:1px solid #3a3f4a;color:var(--text);width:100%;margin-bottom:12px;">View month</button>
       </div>
       <div id="reportResult" style="display:none;padding-top:8px;border-top:1px solid #33384280;">
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;text-align:center;">
@@ -282,7 +278,8 @@ async function loadMembers(){
 
   tbody.querySelectorAll('[data-action="renew"]').forEach(btn => {
     btn.onclick = async () => {
-      await sb.from('members').update({ valid_until: oneMonthFromNow(), payment_status: 'active' }).eq('id', btn.dataset.id);
+      const { error } = await sb.from('members').update({ valid_until: oneMonthFromNow(), payment_status: 'active' }).eq('id', btn.dataset.id);
+      if (error){ alert('Could not renew — check your connection and try again.'); return; }
       loadMembers();
     };
   });
