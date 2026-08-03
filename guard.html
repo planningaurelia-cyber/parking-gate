@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<title>Gate — Parking Control</title>
+<title>Sri Venkateshwara Parking — Gate</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Oswald:wght@500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
@@ -24,7 +24,7 @@
     border-bottom:3px solid transparent;
     border-image:repeating-linear-gradient(135deg,var(--hazard) 0 14px,var(--ink) 14px 28px) 3;
     display:flex;align-items:center;justify-content:space-between;}
-  .topbar .title{font-size:20px;font-weight:600;letter-spacing:0.5px;}
+  .topbar .title{font-size:15px;font-weight:700;letter-spacing:0.3px;line-height:1.25;max-width:230px;}
   .topbar .sub{color:var(--text-dim);font-size:12px;margin-top:2px;}
   .topbar .stat{text-align:right;}
   .topbar .stat .num{font-family:'Oswald',sans-serif;font-size:22px;font-weight:600;color:var(--hazard);}
@@ -41,6 +41,7 @@
   .mode-btn.checkin{background:var(--go);color:#04140c;}
   .mode-btn.checkout{background:var(--stop);color:#1a0505;}
   .mode-btn.recharge{background:var(--hazard);color:#2a1e00;}
+  .mode-btn.status{background:var(--panel-2);color:var(--text);border:1px solid #3a3f4a;}
 
   /* Scan header with cancel */
   .scan-header{display:flex;align-items:center;justify-content:space-between;padding:16px 20px 0;}
@@ -102,9 +103,10 @@
 
   <div class="topbar">
     <div>
-      <div class="title">GATE</div>
-      <div class="sub" id="guardLabel">Parking Control</div>
+      <div class="title">SRI VENKATESHWARA PARKING</div>
+      <div class="sub" id="guardLabel">Gate Control</div>
       <button id="signout" class="hidden">Sign out</button>
+      <a href="/admin.html" style="display:inline-block;margin-top:6px;margin-left:6px;font-size:11px;color:var(--text-dim);border:1px solid #3a3f4a;padding:6px 10px;border-radius:8px;text-decoration:none;">Admin →</a>
     </div>
     <div class="stat">
       <div class="num" id="todayCount">–</div>
@@ -127,6 +129,7 @@
       <button class="mode-btn checkin" data-mode="checkin">Check In<small>Vehicle arriving</small></button>
       <button class="mode-btn checkout" data-mode="checkout">Check Out<small>Vehicle leaving</small></button>
       <button class="mode-btn recharge" data-mode="recharge">Recharge Pass<small>Extend a monthly pass</small></button>
+      <button class="mode-btn status" data-mode="status">Check Status<small>See current status, no changes made</small></button>
     </div>
 
     <!-- Scan screen (hidden until a mode is picked) -->
@@ -222,7 +225,7 @@ document.getElementById('cancelBtn').onclick = exitMode;
 
 async function enterMode(mode){
   currentMode = mode;
-  modeLabel.textContent = mode === 'checkin' ? 'Check In' : mode === 'checkout' ? 'Check Out' : 'Recharge Pass';
+  modeLabel.textContent = mode === 'checkin' ? 'Check In' : mode === 'checkout' ? 'Check Out' : mode === 'recharge' ? 'Recharge Pass' : 'Check Status';
   modeSelect.classList.add('hidden');
   scanScreen.classList.remove('hidden');
   resetResult();
@@ -278,6 +281,7 @@ async function routeScan(code){
   if (currentMode === 'checkin') return handleCheckIn(code, member);
   if (currentMode === 'checkout') return handleCheckOut(member, code);
   if (currentMode === 'recharge') return handleRecharge(member, code);
+  if (currentMode === 'status') return handleStatus(member, code);
 }
 
 async function findMember(rawCode){
@@ -464,6 +468,45 @@ async function handleRecharge(member, scannedCode){
   };
 }
 
+// ---------------- CHECK STATUS (read-only) ----------------
+async function handleStatus(member, scannedCode){
+  if (!member){
+    flashBarrier('stop');
+    showResult({ name: 'Unrecognized QR', meta: `Scanned: ${scannedCode}`, flagBad: true });
+    return;
+  }
+
+  const { data: openSession } = await sb.from('parking_sessions')
+    .select('*').eq('member_id', member.id).is('checked_out_at', null).maybeSingle();
+
+  let lines = [];
+  if (member.plan_type === 'monthly'){
+    const lapsed = member.payment_status === 'lapsed' || (member.valid_until && new Date(member.valid_until) < new Date());
+    lines.push(`Monthly pass · valid until ${member.valid_until || '—'}`);
+    if (openSession){
+      lines.push(`Currently checked in · ${formatDuration(openSession.checked_in_at)}`);
+    } else {
+      lines.push('Not currently checked in');
+    }
+    flashBarrier(lapsed ? 'stop' : 'go');
+    showResult({ name: member.name, meta: lines.join(' · '), flagBad: lapsed, badNote: lapsed ? 'Payment lapsed / plan expired' : '' });
+    return;
+  }
+
+  // per_visit
+  if (openSession){
+    const { amount, hoursLabel } = calcAmount(openSession.checked_in_at);
+    flashBarrier('go');
+    showResult({
+      name: `Vehicle ${openSession.vehicle_number ? '…' + openSession.vehicle_number : ''}`,
+      meta: `${hoursLabel} · would owe ₹${amount} if checked out now`
+    });
+  } else {
+    flashBarrier('go');
+    showResult({ name: 'Day-pass card', meta: 'Not currently checked in' });
+  }
+}
+
 // ---------------- SHARED ----------------
 async function closeSession(sessionId, extra){
   await sb.from('parking_sessions').update({
@@ -502,15 +545,20 @@ function playBeep(){
   try{
     if (!audioCtx) return;
     if (audioCtx.state === 'suspended') audioCtx.resume();
-    const osc = audioCtx.createOscillator();
-    const gain = audioCtx.createGain();
-    osc.type = 'sine';
-    osc.frequency.value = 880;
-    gain.gain.setValueAtTime(0.15, audioCtx.currentTime);
-    gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.18);
-    osc.connect(gain); gain.connect(audioCtx.destination);
-    osc.start();
-    osc.stop(audioCtx.currentTime + 0.18);
+    const beep = (freq, startOffset) => {
+      const osc = audioCtx.createOscillator();
+      const gain = audioCtx.createGain();
+      osc.type = 'square';
+      osc.frequency.value = freq;
+      const t0 = audioCtx.currentTime + startOffset;
+      gain.gain.setValueAtTime(0.5, t0);
+      gain.gain.exponentialRampToValueAtTime(0.001, t0 + 0.12);
+      osc.connect(gain); gain.connect(audioCtx.destination);
+      osc.start(t0);
+      osc.stop(t0 + 0.12);
+    };
+    beep(1000, 0);
+    beep(1000, 0.15);
   } catch(e) {}
 }
 
