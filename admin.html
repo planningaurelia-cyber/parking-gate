@@ -250,7 +250,8 @@ document.getElementById('addBtn').onclick = async () => {
     vehicle_number: document.getElementById('f_vehicle').value.trim(),
     plan_type: plan,
     monthly_fee: plan === 'monthly' ? parseFloat(document.getElementById('f_fee').value) || null : null,
-    valid_until: plan === 'monthly' ? oneMonthFromNow() : null,
+    valid_until: null, // no payment recorded yet — guard must recharge to activate
+    payment_status: plan === 'monthly' ? 'lapsed' : null,
     per_visit_rate: plan === 'per_visit' ? parseFloat(document.getElementById('f_rate').value) || null : null
   };
   if (!payload.name || !payload.phone || !payload.vehicle_number){
