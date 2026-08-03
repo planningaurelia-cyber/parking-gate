@@ -199,10 +199,16 @@ async function runReport(start, end){
     .select('amount_collected')
     .gte('checked_in_at', start.toISOString())
     .lte('checked_in_at', end.toISOString());
-  const total = (sessions || []).reduce((sum, s) => sum + (s.amount_collected || 0), 0);
+  const sessionTotal = (sessions || []).reduce((sum, s) => sum + (s.amount_collected || 0), 0);
+
+  const { data: recharges } = await sb.from('recharges')
+    .select('amount')
+    .gte('recharged_at', start.toISOString())
+    .lte('recharged_at', end.toISOString());
+  const rechargeTotal = (recharges || []).reduce((sum, r) => sum + (r.amount || 0), 0);
 
   document.getElementById('reportCount').textContent = count ?? '0';
-  document.getElementById('reportAmount').textContent = `₹${total}`;
+  document.getElementById('reportAmount').textContent = `₹${sessionTotal + rechargeTotal}`;
   document.getElementById('reportResult').style.display = 'block';
 }
 
@@ -220,7 +226,14 @@ async function loadStats(){
   const { data: todaySessions } = await sb.from('parking_sessions')
     .select('amount_collected')
     .gte('checked_in_at', startOfDay.toISOString());
-  const totalAmount = (todaySessions || []).reduce((sum, s) => sum + (s.amount_collected || 0), 0);
+  const sessionAmount = (todaySessions || []).reduce((sum, s) => sum + (s.amount_collected || 0), 0);
+
+  const { data: todayRecharges } = await sb.from('recharges')
+    .select('amount')
+    .gte('recharged_at', startOfDay.toISOString());
+  const rechargeAmount = (todayRecharges || []).reduce((sum, r) => sum + (r.amount || 0), 0);
+
+  const totalAmount = sessionAmount + rechargeAmount;
 
   document.getElementById('statCheckedIn').textContent = checkedIn ?? '0';
   document.getElementById('statPresent').textContent = present ?? '0';
