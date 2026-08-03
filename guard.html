@@ -72,8 +72,11 @@
   .status-caption{text-align:center;font-family:'Oswald',sans-serif;font-size:14px;
     color:var(--text-dim);padding:12px 20px 0;letter-spacing:0.3px;}
 
-  .result{margin:14px 20px 20px;background:var(--panel);border-radius:var(--radius);padding:18px;display:none;}
+  .result{margin:14px 20px 20px;background:var(--panel);border-radius:var(--radius);padding:18px;display:none;
+    border:2px solid transparent;}
   .result.show{display:block;animation:rise .25s ease;}
+  .result.good{background:#1a2e22;border-color:rgba(47,184,114,.4);}
+  .result.bad{background:#2e1a1c;border-color:rgba(229,72,77,.4);}
   @keyframes rise{from{opacity:0;transform:translateY(8px);}to{opacity:1;transform:translateY(0);}}
   .result .name{font-family:'Oswald',sans-serif;font-size:22px;font-weight:600;}
   .result .meta{color:var(--text-dim);font-size:13px;margin-top:2px;}
@@ -532,6 +535,8 @@ async function handleStatus(member, scannedCode){
   if (member.plan_type === 'monthly'){
     const lapsed = member.payment_status === 'lapsed' || (member.valid_until && new Date(member.valid_until) < new Date());
     flashBarrier(lapsed ? 'stop' : 'go');
+    resultCard.classList.remove('good','bad');
+    resultCard.classList.add(lapsed ? 'bad' : 'good');
     resultCard.innerHTML = `
       <div class="name">${escapeHtml(member.name)}</div>
       <div class="meta">Monthly pass</div>
@@ -557,6 +562,8 @@ async function handleStatus(member, scannedCode){
   if (openSession){
     const { amount, hoursLabel } = calcAmount(openSession.checked_in_at);
     flashBarrier('go');
+    resultCard.classList.remove('good','bad');
+    resultCard.classList.add('good');
     resultCard.innerHTML = `
       <div class="name">Vehicle ${openSession.vehicle_number ? '…' + escapeHtml(openSession.vehicle_number) : '—'}</div>
       <div class="meta">Currently checked in</div>
@@ -637,7 +644,7 @@ function playBeep(){
 }
 
 function resetResult(){
-  resultCard.classList.remove('show');
+  resultCard.classList.remove('show','good','bad');
   resultCard.innerHTML = '';
   barrierStage.classList.remove('open','stop');
   caption.textContent = 'Point camera at the QR code';
@@ -646,6 +653,8 @@ function resetResult(){
 }
 
 function showResult({ name, meta, flagBad, badNote }){
+  resultCard.classList.remove('good','bad');
+  resultCard.classList.add(flagBad ? 'bad' : 'good');
   resultCard.innerHTML = `
     <div class="name">${escapeHtml(name)}</div>
     <div class="meta">${escapeHtml(meta)}</div>
