@@ -472,7 +472,7 @@ async function handleRecharge(member, scannedCode){
   const today = new Date().toISOString().slice(0,10);
   const nextMonth = new Date(); nextMonth.setMonth(nextMonth.getMonth() + 1);
   const defaultTo = nextMonth.toISOString().slice(0,10);
-  const feeAmount = member.monthly_fee || 500;
+  const feeAmount = 500;
 
   pendingConfirmation = true;
   caption.textContent = 'Select new validity period';
