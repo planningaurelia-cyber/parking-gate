@@ -324,9 +324,14 @@ async function handleCheckIn(code, member){
 
   if (member && member.plan_type === 'monthly'){
     const lapsed = member.payment_status === 'lapsed' || (member.valid_until && new Date(member.valid_until) < new Date());
-    await sb.from('parking_sessions').insert({
+    const { error: insErr } = await sb.from('parking_sessions').insert({
       member_id: member.id, guard_notes: `Checked in by ${currentGuardName}`
     });
+    if (insErr){
+      flashBarrier('stop');
+      showResult({ name: member.name, meta: 'Could not check in — may already be checked in elsewhere', flagBad: true });
+      return;
+    }
     flashBarrier(lapsed ? 'stop' : 'go');
     showResult({
       name: member.name, meta: `Checked in · Monthly pass`,
