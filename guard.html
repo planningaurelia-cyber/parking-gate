@@ -402,12 +402,16 @@ async function handleCheckOut(member, scannedCode){
   }
 
   if (member.plan_type === 'monthly'){
+    const lapsed = member.payment_status === 'lapsed' || (member.valid_until && new Date(member.valid_until) < new Date());
     const { error } = await closeSession(openSession.id, {});
     if (error){
       flashBarrier('stop'); showResult({ name: member.name, meta: 'Could not check out — try again', flagBad: true }); return;
     }
-    flashBarrier('go');
-    showResult({ name: member.name, meta: `Checked out · ${formatDuration(openSession.checked_in_at)}` });
+    flashBarrier(lapsed ? 'stop' : 'go');
+    showResult({
+      name: member.name, meta: `Checked out · ${formatDuration(openSession.checked_in_at)}`,
+      flagBad: lapsed, badNote: lapsed ? 'Pass expired during stay — needs recharge' : ''
+    });
     refreshTodayCount();
     return;
   }
@@ -468,6 +472,7 @@ async function handleRecharge(member, scannedCode){
   const today = new Date().toISOString().slice(0,10);
   const nextMonth = new Date(); nextMonth.setMonth(nextMonth.getMonth() + 1);
   const defaultTo = nextMonth.toISOString().slice(0,10);
+  const feeAmount = member.monthly_fee || 500;
 
   pendingConfirmation = true;
   caption.textContent = 'Select new validity period';
@@ -479,6 +484,8 @@ async function handleRecharge(member, scannedCode){
       <input type="date" id="fromInput" value="${today}">
       <label>Valid until</label>
       <input type="date" id="toInput" value="${defaultTo}">
+      <label>Amount collected (₹)</label>
+      <input type="number" id="feeInput" value="${feeAmount}" readonly style="opacity:0.85;">
       <button class="btn btn-hazard" id="confirmRecharge">Confirm recharge</button>
     </div>
   `;
@@ -487,17 +494,26 @@ async function handleRecharge(member, scannedCode){
   document.getElementById('confirmRecharge').onclick = async () => {
     const from = document.getElementById('fromInput').value;
     const to = document.getElementById('toInput').value;
+    const amount = parseFloat(document.getElementById('feeInput').value) || 0;
     if (!from || !to){ alert('Pick both a start and end date first.'); return; }
-    const { error } = await sb.from('members').update({
+
+    const { error: updateErr } = await sb.from('members').update({
       valid_from: from, valid_until: to, payment_status: 'active'
     }).eq('id', member.id);
-    if (error){
+    if (updateErr){
       alert('Could not save recharge — check your connection and try again.');
       return;
     }
+    const { error: rechargeErr } = await sb.from('recharges').insert({
+      member_id: member.id, amount, valid_from: from, valid_until: to,
+      guard_notes: `Recharged by ${currentGuardName}`
+    });
+    if (rechargeErr){
+      alert('Pass was renewed, but the amount could not be logged for reports — note it down manually.');
+    }
     pendingConfirmation = false;
     flashBarrier('go');
-    showResult({ name: member.name, meta: `Recharged · valid till ${to}` });
+    showResult({ name: member.name, meta: `Recharged · ₹${amount} · valid till ${to}` });
   };
 }
 
