@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Admin — Parking Control</title>
+<title>Sri Venkateshwara Parking — Admin</title>
 <link href="https://fonts.googleapis.com/css2?family=Oswald:wght@500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
@@ -55,8 +55,14 @@
 
   <div id="mainView" class="hidden">
     <div class="topbar">
-      <div class="title">ADMIN · Members</div>
-      <button class="btn" id="signout" style="background:none;border:1px solid #3a3f4a;color:var(--text-dim);">Sign out</button>
+      <div>
+        <div class="title">SRI VENKATESHWARA PARKING</div>
+        <div style="font-size:11px;color:var(--text-dim);margin-top:2px;">Admin</div>
+      </div>
+      <div style="display:flex;gap:8px;align-items:center;">
+        <a href="/guard.html" style="font-size:12px;color:var(--text-dim);border:1px solid #3a3f4a;padding:8px 12px;border-radius:8px;text-decoration:none;">← Gate</a>
+        <button class="btn" id="signout" style="background:none;border:1px solid #3a3f4a;color:var(--text-dim);">Sign out</button>
+      </div>
     </div>
 
     <div class="card" style="display:grid;grid-template-columns:repeat(3,1fr);gap:14px;text-align:center;">
@@ -71,6 +77,34 @@
       <div>
         <div style="font-family:'Oswald',sans-serif;font-size:28px;font-weight:600;color:var(--hazard);" id="statAmount">–</div>
         <div style="font-size:11px;color:var(--text-dim);text-transform:uppercase;">Collected today</div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Reports</h2>
+      <div class="grid2">
+        <div>
+          <label>View a specific day this month</label>
+          <input type="date" id="reportDate">
+          <button class="btn" id="viewDayBtn" style="background:none;border:1px solid #3a3f4a;color:var(--text);width:100%;margin-bottom:12px;">View day</button>
+        </div>
+        <div>
+          <label>View a whole month</label>
+          <input type="month" id="reportMonth">
+          <button class="btn" id="viewMonthBtn" style="background:none;border:1px solid #3a3f4a;color:var(--text);width:100%;margin-bottom:12px;">View month</button>
+        </div>
+      </div>
+      <div id="reportResult" style="display:none;padding-top:8px;border-top:1px solid #33384280;">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;text-align:center;">
+          <div>
+            <div style="font-family:'Oswald',sans-serif;font-size:24px;font-weight:600;" id="reportCount">–</div>
+            <div style="font-size:11px;color:var(--text-dim);text-transform:uppercase;">Checked in</div>
+          </div>
+          <div>
+            <div style="font-family:'Oswald',sans-serif;font-size:24px;font-weight:600;color:var(--hazard);" id="reportAmount">–</div>
+            <div style="font-size:11px;color:var(--text-dim);text-transform:uppercase;">Collected</div>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -102,7 +136,7 @@
       <h2>Members</h2>
       <table>
         <thead>
-          <tr><th>Name</th><th>Vehicle</th><th>Plan</th><th>Status</th><th>QR</th><th></th></tr>
+          <tr><th>Name</th><th>Vehicle</th><th>Plan</th><th>Status</th><th>QR</th><th>Actions</th></tr>
         </thead>
         <tbody id="memberRows"></tbody>
       </table>
@@ -140,6 +174,40 @@ async function boot(){
   mainView.classList.remove('hidden');
   loadMembers();
   loadStats();
+}
+
+document.getElementById('viewDayBtn').onclick = async () => {
+  const dateVal = document.getElementById('reportDate').value;
+  if (!dateVal) return;
+  const start = new Date(dateVal + 'T00:00:00');
+  const end = new Date(dateVal + 'T23:59:59');
+  await runReport(start, end);
+};
+
+document.getElementById('viewMonthBtn').onclick = async () => {
+  const monthVal = document.getElementById('reportMonth').value; // "YYYY-MM"
+  if (!monthVal) return;
+  const [y, m] = monthVal.split('-').map(Number);
+  const start = new Date(y, m - 1, 1, 0, 0, 0);
+  const end = new Date(y, m, 0, 23, 59, 59); // last day of month
+  await runReport(start, end);
+};
+
+async function runReport(start, end){
+  const { count } = await sb.from('parking_sessions')
+    .select('id', { count: 'exact', head: true })
+    .gte('checked_in_at', start.toISOString())
+    .lte('checked_in_at', end.toISOString());
+
+  const { data: sessions } = await sb.from('parking_sessions')
+    .select('amount_collected')
+    .gte('checked_in_at', start.toISOString())
+    .lte('checked_in_at', end.toISOString());
+  const total = (sessions || []).reduce((sum, s) => sum + (s.amount_collected || 0), 0);
+
+  document.getElementById('reportCount').textContent = count ?? '0';
+  document.getElementById('reportAmount').textContent = `₹${total}`;
+  document.getElementById('reportResult').style.display = 'block';
 }
 
 async function loadStats(){
@@ -205,9 +273,9 @@ async function loadMembers(){
       <td>${escapeHtml(m.name)}</td>
       <td>${escapeHtml(m.vehicle_number)}</td>
       <td>${m.plan_type === 'monthly' ? 'Monthly' : 'Per-visit'}</td>
-      <td>${lapsed ? '<span class="pill bad">Lapsed</span>' : '<span class="pill ok">Active</span>'}</td>
+      <td>${!m.is_active ? '<span class="pill bad">Deactivated</span>' : lapsed ? '<span class="pill bad">Lapsed</span>' : '<span class="pill ok">Active</span>'}</td>
       <td><a class="qrlink" href="${qrUrl}" target="_blank">View QR</a></td>
-      <td>${m.plan_type === 'monthly' ? `<button class="btn" data-id="${m.id}" data-action="renew" style="background:none;border:1px solid #3a3f4a;color:var(--text-dim);padding:5px 10px;font-size:12px;">Renew</button>` : ''}</td>
+      <td>${m.plan_type === 'monthly' ? `<button class="btn" data-id="${m.id}" data-action="renew" style="background:none;border:1px solid #3a3f4a;color:var(--text-dim);padding:5px 10px;font-size:12px;margin-right:6px;">Renew</button>` : ''}<button class="btn" data-id="${m.id}" data-name="${escapeHtml(m.name)}" data-action="delete" style="background:none;border:1px solid var(--stop);color:var(--stop);padding:5px 10px;font-size:12px;">Delete</button></td>
     `;
     tbody.appendChild(tr);
   });
@@ -215,6 +283,19 @@ async function loadMembers(){
   tbody.querySelectorAll('[data-action="renew"]').forEach(btn => {
     btn.onclick = async () => {
       await sb.from('members').update({ valid_until: oneMonthFromNow(), payment_status: 'active' }).eq('id', btn.dataset.id);
+      loadMembers();
+    };
+  });
+
+  tbody.querySelectorAll('[data-action="delete"]').forEach(btn => {
+    btn.onclick = async () => {
+      if (!confirm(`Delete ${btn.dataset.name}? This can't be undone.`)) return;
+      const { error } = await sb.from('members').delete().eq('id', btn.dataset.id);
+      if (error){
+        // Likely has trip history (foreign key restrict) — deactivate instead
+        await sb.from('members').update({ is_active: false }).eq('id', btn.dataset.id);
+        alert(`${btn.dataset.name} has parking history, so they were deactivated instead of deleted (history is kept intact).`);
+      }
       loadMembers();
     };
   });
