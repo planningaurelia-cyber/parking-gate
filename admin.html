@@ -91,7 +91,7 @@
         <button class="btn" id="viewMonthBtn" style="background:none;border:1px solid #3a3f4a;color:var(--text);width:100%;margin-bottom:12px;">View month</button>
       </div>
       <div id="reportResult" style="display:none;padding-top:8px;border-top:1px solid #33384280;">
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;text-align:center;">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;text-align:center;margin-bottom:12px;">
           <div>
             <div style="font-family:'Oswald',sans-serif;font-size:24px;font-weight:600;" id="reportCount">–</div>
             <div style="font-size:11px;color:var(--text-dim);text-transform:uppercase;">Checked in</div>
@@ -101,11 +101,17 @@
             <div style="font-size:11px;color:var(--text-dim);text-transform:uppercase;">Collected</div>
           </div>
         </div>
+        <button class="btn" id="exportCsvBtn" style="background:none;border:1px solid #3a3f4a;color:var(--text);width:100%;">Export CSV</button>
       </div>
     </div>
 
     <div class="card">
-      <h2>Add member</h2>
+      <h2>Who's on duty today</h2>
+      <div id="dutyList" style="font-size:13px;color:var(--text-dim);">Loading…</div>
+    </div>
+
+    <div class="card">
+      <h2 id="addCardTitle">Add member</h2>
       <div class="grid2">
         <div><label>Name</label><input id="f_name"></div>
         <div><label>Phone</label><input id="f_phone"></div>
@@ -124,12 +130,16 @@
           <label>Per-visit rate (₹)</label><input id="f_rate" type="number">
         </div>
       </div>
-      <button class="btn btn-go" id="addBtn">Add member</button>
+      <div style="display:flex;gap:10px;">
+        <button class="btn btn-go" id="addBtn" style="flex:1;">Add member</button>
+        <button class="btn hidden" id="cancelEditBtn" style="background:none;border:1px solid #3a3f4a;color:var(--text-dim);">Cancel</button>
+      </div>
       <div class="err" id="addErr"></div>
     </div>
 
     <div class="card">
       <h2>Members</h2>
+      <input id="memberSearch" placeholder="Search by name, vehicle, or card code…" style="margin-bottom:14px;">
       <table>
         <thead>
           <tr><th>Name</th><th>Vehicle</th><th>Plan</th><th>Status</th><th>QR</th><th>Actions</th></tr>
@@ -170,7 +180,33 @@ async function boot(){
   mainView.classList.remove('hidden');
   loadMembers();
   loadStats();
+  loadDutyList();
 }
+
+async function loadDutyList(){
+  const startOfDay = new Date(); startOfDay.setHours(0,0,0,0);
+  const { data: sessions } = await sb.from('parking_sessions').select('guard_notes').gte('checked_in_at', startOfDay.toISOString());
+  const { data: recharges } = await sb.from('recharges').select('guard_notes').gte('recharged_at', startOfDay.toISOString());
+
+  const counts = {};
+  [...(sessions || []), ...(recharges || [])].forEach(row => {
+    const match = (row.guard_notes || '').match(/by (.+)$/);
+    if (match){
+      const name = match[1].trim();
+      counts[name] = (counts[name] || 0) + 1;
+    }
+  });
+
+  const names = Object.keys(counts);
+  const dutyList = document.getElementById('dutyList');
+  if (names.length === 0){
+    dutyList.textContent = 'No activity yet today.';
+    return;
+  }
+  dutyList.innerHTML = names.map(n => `<div style="display:flex;justify-content:space-between;padding:4px 0;"><span style="color:var(--text);">${escapeHtml(n)}</span><span>${counts[n]} action${counts[n] !== 1 ? 's' : ''}</span></div>`).join('');
+}
+
+let lastReportRange = null;
 
 document.getElementById('viewDayBtn').onclick = async () => {
   const dateVal = document.getElementById('reportDate').value;
@@ -190,6 +226,7 @@ document.getElementById('viewMonthBtn').onclick = async () => {
 };
 
 async function runReport(start, end){
+  lastReportRange = { start, end };
   const { count } = await sb.from('parking_sessions')
     .select('id', { count: 'exact', head: true })
     .gte('checked_in_at', start.toISOString())
@@ -211,6 +248,44 @@ async function runReport(start, end){
   document.getElementById('reportAmount').textContent = `₹${sessionTotal + rechargeTotal}`;
   document.getElementById('reportResult').style.display = 'block';
 }
+
+document.getElementById('exportCsvBtn').onclick = async () => {
+  if (!lastReportRange) return;
+  const { start, end } = lastReportRange;
+
+  const { data: sessions } = await sb.from('parking_sessions')
+    .select('*, members(name, plan_type)')
+    .gte('checked_in_at', start.toISOString())
+    .lte('checked_in_at', end.toISOString())
+    .order('checked_in_at');
+
+  const rows = [['Type','Name','Vehicle','Checked In','Checked Out','Amount','Payment Mode','Notes']];
+  (sessions || []).forEach(s => {
+    rows.push([
+      s.members?.plan_type || '', s.members?.name || '', s.vehicle_number || '',
+      s.checked_in_at || '', s.checked_out_at || '', s.amount_collected || '',
+      s.payment_mode || '', s.guard_notes || ''
+    ]);
+  });
+
+  const { data: recharges } = await sb.from('recharges')
+    .select('*, members(name)')
+    .gte('recharged_at', start.toISOString())
+    .lte('recharged_at', end.toISOString())
+    .order('recharged_at');
+  (recharges || []).forEach(r => {
+    rows.push(['recharge', r.members?.name || '', '', r.recharged_at || '', '', r.amount || '', '', r.guard_notes || '']);
+  });
+
+  const csv = rows.map(r => r.map(v => `"${String(v).replace(/"/g, '""')}"`).join(',')).join('\n');
+  const blob = new Blob([csv], { type: 'text/csv' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `parking-report-${start.toISOString().slice(0,10)}-to-${end.toISOString().slice(0,10)}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
+};
 
 async function loadStats(){
   const startOfDay = new Date(); startOfDay.setHours(0,0,0,0);
@@ -240,6 +315,9 @@ async function loadStats(){
   document.getElementById('statAmount').textContent = `₹${totalAmount}`;
 }
 
+let editingMemberId = null;
+let allMembers = [];
+
 document.getElementById('addBtn').onclick = async () => {
   const errBox = document.getElementById('addErr');
   errBox.textContent = '';
@@ -250,43 +328,99 @@ document.getElementById('addBtn').onclick = async () => {
     vehicle_number: document.getElementById('f_vehicle').value.trim(),
     plan_type: plan,
     monthly_fee: plan === 'monthly' ? parseFloat(document.getElementById('f_fee').value) || null : null,
-    valid_until: null, // no payment recorded yet — guard must recharge to activate
-    payment_status: plan === 'monthly' ? 'lapsed' : null,
     per_visit_rate: plan === 'per_visit' ? parseFloat(document.getElementById('f_rate').value) || null : null
   };
   if (!payload.name || !payload.phone || !payload.vehicle_number){
     errBox.textContent = 'Name, phone and vehicle number are required.';
     return;
   }
-  const { error } = await sb.from('members').insert(payload);
-  if (error){ errBox.textContent = error.message; return; }
+
+  if (editingMemberId){
+    const { error } = await sb.from('members').update(payload).eq('id', editingMemberId);
+    if (error){ errBox.textContent = error.message; return; }
+    exitEditMode();
+  } else {
+    payload.valid_until = null; // no payment recorded yet — guard must recharge to activate
+    payload.payment_status = plan === 'monthly' ? 'lapsed' : null;
+    const { error } = await sb.from('members').insert(payload);
+    if (error){ errBox.textContent = error.message; return; }
+  }
   ['f_name','f_phone','f_vehicle','f_fee','f_rate'].forEach(id => document.getElementById(id).value = '');
   loadMembers();
 };
+
+document.getElementById('cancelEditBtn').onclick = exitEditMode;
+
+function exitEditMode(){
+  editingMemberId = null;
+  document.getElementById('addCardTitle').textContent = 'Add member';
+  document.getElementById('addBtn').textContent = 'Add member';
+  document.getElementById('cancelEditBtn').classList.add('hidden');
+  ['f_name','f_phone','f_vehicle','f_fee','f_rate'].forEach(id => document.getElementById(id).value = '');
+}
+
+function enterEditMode(member){
+  editingMemberId = member.id;
+  document.getElementById('addCardTitle').textContent = `Editing: ${member.name}`;
+  document.getElementById('addBtn').textContent = 'Save changes';
+  document.getElementById('cancelEditBtn').classList.remove('hidden');
+  document.getElementById('f_name').value = member.name || '';
+  document.getElementById('f_phone').value = member.phone || '';
+  document.getElementById('f_vehicle').value = member.vehicle_number || '';
+  document.getElementById('f_plan').value = member.plan_type;
+  document.getElementById('f_fee').value = member.monthly_fee || '';
+  document.getElementById('f_rate').value = member.per_visit_rate || '';
+  document.getElementById('f_plan').dispatchEvent(new Event('change'));
+  document.getElementById('addCardTitle').scrollIntoView({ behavior: 'smooth' });
+}
 
 function oneMonthFromNow(){
   const d = new Date(); d.setMonth(d.getMonth() + 1);
   return d.toISOString().slice(0,10);
 }
 
+document.getElementById('memberSearch').oninput = (e) => renderMembers(e.target.value.trim().toLowerCase());
+
 async function loadMembers(){
   const { data: members, error } = await sb.from('members').select('*').order('created_at', { ascending: false });
+  if (error){ document.getElementById('memberRows').innerHTML = `<tr><td colspan="6">Error loading members</td></tr>`; return; }
+  allMembers = members || [];
+  renderMembers(document.getElementById('memberSearch').value.trim().toLowerCase());
+}
+
+function renderMembers(filter){
   const tbody = document.getElementById('memberRows');
   tbody.innerHTML = '';
-  if (error){ tbody.innerHTML = `<tr><td colspan="6">Error loading members</td></tr>`; return; }
 
-  members.forEach(m => {
+  const filtered = !filter ? allMembers : allMembers.filter(m =>
+    (m.name || '').toLowerCase().includes(filter) ||
+    (m.vehicle_number || '').toLowerCase().includes(filter) ||
+    (m.card_code || '').toLowerCase().includes(filter)
+  );
+
+  if (filtered.length === 0){
+    tbody.innerHTML = `<tr><td colspan="6" style="color:var(--text-dim);">No members match.</td></tr>`;
+    return;
+  }
+
+  filtered.forEach(m => {
     const lapsed = m.plan_type === 'monthly' && (m.payment_status === 'lapsed' || (m.valid_until && new Date(m.valid_until) < new Date()));
     const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(m.id)}`;
     const tr = document.createElement('tr');
     tr.innerHTML = `
       <td>${escapeHtml(m.name)}</td>
-      <td>${escapeHtml(m.vehicle_number)}</td>
+      <td>${escapeHtml(m.vehicle_number || '—')}</td>
       <td>${m.plan_type === 'monthly' ? 'Monthly' : 'Per-visit'}</td>
       <td>${!m.is_active ? '<span class="pill bad">Deactivated</span>' : lapsed ? '<span class="pill bad">Lapsed</span>' : '<span class="pill ok">Active</span>'}</td>
       <td><a class="qrlink" href="${qrUrl}" target="_blank">View QR</a></td>
-      <td>${m.plan_type === 'monthly' ? `<button class="btn" data-id="${m.id}" data-action="renew" style="background:none;border:1px solid #3a3f4a;color:var(--text-dim);padding:5px 10px;font-size:12px;margin-right:6px;">Renew</button>` : ''}<button class="btn" data-id="${m.id}" data-name="${escapeHtml(m.name)}" data-action="delete" style="background:none;border:1px solid var(--stop);color:var(--stop);padding:5px 10px;font-size:12px;">Delete</button></td>
+      <td style="white-space:nowrap;">
+        ${m.plan_type === 'monthly' ? `<button class="btn" data-id="${m.id}" data-action="renew" style="background:none;border:1px solid #3a3f4a;color:var(--text-dim);padding:5px 10px;font-size:12px;margin-right:6px;">Renew</button>` : ''}
+        <button class="btn" data-action="edit" style="background:none;border:1px solid #3a3f4a;color:var(--text-dim);padding:5px 10px;font-size:12px;margin-right:6px;">Edit</button>
+        <button class="btn" data-id="${m.id}" data-action="replace-card" style="background:none;border:1px solid var(--hazard);color:var(--hazard);padding:5px 10px;font-size:12px;margin-right:6px;">Replace card</button>
+        <button class="btn" data-id="${m.id}" data-name="${escapeHtml(m.name)}" data-action="delete" style="background:none;border:1px solid var(--stop);color:var(--stop);padding:5px 10px;font-size:12px;">Delete</button>
+      </td>
     `;
+    tr.querySelector('[data-action="edit"]').onclick = () => enterEditMode(m);
     tbody.appendChild(tr);
   });
 
@@ -298,12 +432,22 @@ async function loadMembers(){
     };
   });
 
+  tbody.querySelectorAll('[data-action="replace-card"]').forEach(btn => {
+    btn.onclick = async () => {
+      const newCode = prompt("Scan or read the new physical card, then type exactly what it decodes to:");
+      if (!newCode) return;
+      const { error } = await sb.from('members').update({ card_code: newCode.trim() }).eq('id', btn.dataset.id);
+      if (error){ alert('Could not save — that code may already be in use on another card.'); return; }
+      alert('Card replaced. The old card no longer works for this member.');
+      loadMembers();
+    };
+  });
+
   tbody.querySelectorAll('[data-action="delete"]').forEach(btn => {
     btn.onclick = async () => {
       if (!confirm(`Delete ${btn.dataset.name}? This can't be undone.`)) return;
       const { error } = await sb.from('members').delete().eq('id', btn.dataset.id);
       if (error){
-        // Likely has trip history (foreign key restrict) — deactivate instead
         await sb.from('members').update({ is_active: false }).eq('id', btn.dataset.id);
         alert(`${btn.dataset.name} has parking history, so they were deactivated instead of deleted (history is kept intact).`);
       }
