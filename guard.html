@@ -167,6 +167,10 @@
         <div class="barrier-arm" id="barrierArm"></div>
       </div>
       <div class="status-caption" id="caption">Point camera at the QR code</div>
+      <div style="display:flex;gap:10px;justify-content:center;padding:10px 20px 0;flex-wrap:wrap;">
+        <button id="manualEntryLink" style="background:none;border:none;color:var(--text-dim);font-family:inherit;font-size:12px;text-decoration:underline;cursor:pointer;">Card won't scan? Type code</button>
+        <button id="vehicleLookupLink" class="hidden" style="background:none;border:none;color:var(--text-dim);font-family:inherit;font-size:12px;text-decoration:underline;cursor:pointer;">Find by vehicle number</button>
+      </div>
       <div class="result" id="resultCard"></div>
     </div>
   </div>
@@ -293,6 +297,7 @@ async function enterMode(mode){
   clearTimeout(autoReturnTimer);
   if (!isOffline) setStatusBar('neutral', 'Ready to scan');
   currentMode = mode;
+  document.getElementById('vehicleLookupLink').classList.toggle('hidden', mode !== 'checkout');
   modeLabel.textContent = mode === 'checkin' ? 'Check In' : mode === 'checkout' ? 'Check Out' : mode === 'recharge' ? 'Recharge Pass' : 'Check Status';
   modeSelect.classList.add('hidden');
   scanScreen.classList.remove('hidden');
@@ -309,6 +314,110 @@ async function exitMode(){
   scanScreen.classList.add('hidden');
   modeSelect.classList.remove('hidden');
   resetResult();
+}
+
+document.getElementById('manualEntryLink').onclick = () => {
+  pendingConfirmation = true;
+  caption.textContent = 'Type the code printed on the card';
+  resultCard.classList.remove('good','bad');
+  resultCard.innerHTML = `
+    <div class="form-block" style="border-top:none;padding-top:0;">
+      <label>Card code</label>
+      <input type="text" id="manualCodeInput" placeholder="Type exactly what's on the card" autocapitalize="off">
+      <button class="btn btn-go" id="manualCodeSubmit">Look up</button>
+    </div>
+  `;
+  resultCard.classList.add('show');
+  document.getElementById('manualCodeSubmit').onclick = async () => {
+    const code = document.getElementById('manualCodeInput').value.trim();
+    if (!code){ alert('Type a code first.'); return; }
+    pendingConfirmation = false;
+    pauseScanner();
+    playBeep();
+    await routeScan(code);
+  };
+};
+
+document.getElementById('vehicleLookupLink').onclick = () => {
+  pendingConfirmation = true;
+  caption.textContent = "Find a parked vehicle by number";
+  resultCard.classList.remove('good','bad');
+  resultCard.innerHTML = `
+    <div class="form-block" style="border-top:none;padding-top:0;">
+      <label>Last 4 digits of vehicle number</label>
+      <input type="text" id="vehLookupInput" maxlength="4" inputmode="numeric" placeholder="e.g. 4821">
+      <button class="btn btn-go" id="vehLookupSubmit">Find vehicle</button>
+    </div>
+  `;
+  resultCard.classList.add('show');
+  document.getElementById('vehLookupSubmit').onclick = async () => {
+    const digits = document.getElementById('vehLookupInput').value.trim();
+    if (!digits){ alert('Enter the last 4 digits first.'); return; }
+    pauseScanner();
+    const { data: matches } = await sb.from('parking_sessions')
+      .select('*, members(name)')
+      .is('checked_out_at', null)
+      .ilike('vehicle_number', `%${digits}`);
+
+    if (!matches || matches.length === 0){
+      pendingConfirmation = false;
+      flashBarrier('stop');
+      showResult({ name: 'Not found', meta: `No currently-parked vehicle ending in ${digits}`, flagBad: true });
+      return;
+    }
+    if (matches.length === 1){
+      pendingConfirmation = false;
+      await checkOutSession(matches[0]);
+      return;
+    }
+    // multiple matches — let the guard pick
+    resultCard.innerHTML = `
+      <div class="name">Multiple matches</div>
+      <div class="meta">Pick the right vehicle</div>
+      <div class="form-block">
+        ${matches.map(s => `<button class="btn" data-sid="${s.id}" style="background:var(--panel-2);border:1px solid #3a3f4a;color:var(--text);margin-bottom:8px;">…${s.vehicle_number} · in for ${formatDuration(s.checked_in_at)}</button>`).join('')}
+      </div>
+    `;
+    resultCard.querySelectorAll('[data-sid]').forEach(btn => {
+      btn.onclick = async () => {
+        const match = matches.find(m => m.id === btn.dataset.sid);
+        pendingConfirmation = false;
+        await checkOutSession(match);
+      };
+    });
+  };
+};
+
+// Shared checkout logic used by both QR scan and the vehicle-number fallback
+async function checkOutSession(session){
+  const { amount, hoursLabel } = calcAmount(session.checked_in_at);
+  pendingConfirmation = true;
+  caption.textContent = 'Confirm amount to check out';
+  resultCard.classList.remove('good','bad');
+  resultCard.innerHTML = `
+    <div class="name">Vehicle ${session.vehicle_number ? '…' + escapeHtml(session.vehicle_number) : ''}</div>
+    <div class="meta">${hoursLabel}</div>
+    <div class="amount-big">₹${amount}</div>
+    <div class="form-block">
+      <label>Amount to collect (₹)</label>
+      <input type="number" id="amtInput" value="${amount}" readonly style="opacity:0.85;">
+      <label>Payment mode</label>
+      <select id="modeInput"><option value="upi">UPI</option><option value="cash">Cash</option></select>
+      <button class="btn btn-stop" id="confirmCheckout">Confirm checkout</button>
+    </div>
+  `;
+  resultCard.classList.add('show');
+
+  document.getElementById('confirmCheckout').onclick = async () => {
+    const finalAmount = parseFloat(document.getElementById('amtInput').value) || 0;
+    const mode = document.getElementById('modeInput').value;
+    const { error } = await closeSession(session.id, { amount_collected: finalAmount, payment_mode: mode });
+    if (error){ alert('Could not save checkout — check your connection and try again.'); return; }
+    pendingConfirmation = false;
+    flashBarrier('go');
+    showResult({ name: 'Checked out', meta: `₹${finalAmount} via ${mode} · ${hoursLabel}` });
+    refreshTodayCount();
+  };
 }
 
 // ---------------- SCANNER ----------------
