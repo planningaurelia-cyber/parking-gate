@@ -104,10 +104,13 @@
   .err{color:var(--stop);font-size:13px;text-align:center;}
   .hidden{display:none!important;}
 
-  .offline-banner{
-    background:var(--stop);color:#1a0505;text-align:center;font-family:'Oswald',sans-serif;
-    font-weight:600;font-size:13px;padding:8px;letter-spacing:0.3px;
+  .status-bar{
+    background:var(--hazard);color:#2a1e00;text-align:center;font-family:'Oswald',sans-serif;
+    font-weight:600;font-size:13px;padding:9px;letter-spacing:0.3px;
+    transition:background-color .2s ease, color .2s ease;
   }
+  .status-bar.good{background:var(--go);color:#04140c;}
+  .status-bar.bad{background:var(--stop);color:#1a0505;}
 
   .flash-overlay{position:fixed;inset:0;pointer-events:none;z-index:9999;opacity:0;transition:opacity .18s ease;}
   .flash-overlay.go{background:var(--go);}
@@ -119,7 +122,7 @@
 <div class="flash-overlay" id="flashOverlay"></div>
 <div class="app">
 
-  <div class="offline-banner hidden" id="offlineBanner">⚠ No internet connection — scans won't work until it's back</div>
+  <div class="status-bar" id="statusBar">Ready to scan</div>
 
   <div class="topbar">
     <div>
@@ -192,13 +195,22 @@ const caption = document.getElementById('caption');
 const resultCard = document.getElementById('resultCard');
 const barrierStage = document.getElementById('barrierStage');
 const todayCountEl = document.getElementById('todayCount');
-const offlineBanner = document.getElementById('offlineBanner');
+const statusBar = document.getElementById('statusBar');
+let isOffline = false;
+
+function setStatusBar(state, text){
+  statusBar.classList.remove('good','bad');
+  if (state === 'good') statusBar.classList.add('good');
+  if (state === 'bad') statusBar.classList.add('bad');
+  statusBar.textContent = text;
+}
 
 function updateOnlineStatus(){
-  if (!navigator.onLine){
-    offlineBanner.classList.remove('hidden');
+  isOffline = !navigator.onLine;
+  if (isOffline){
+    setStatusBar('bad', '⚠ No internet connection — scans won\'t work');
   } else {
-    offlineBanner.classList.add('hidden');
+    setStatusBar('neutral', 'Ready to scan');
   }
 }
 window.addEventListener('online', updateOnlineStatus);
@@ -279,6 +291,7 @@ document.getElementById('cancelBtn').onclick = () => {
 
 async function enterMode(mode){
   clearTimeout(autoReturnTimer);
+  if (!isOffline) setStatusBar('neutral', 'Ready to scan');
   currentMode = mode;
   modeLabel.textContent = mode === 'checkin' ? 'Check In' : mode === 'checkout' ? 'Check Out' : mode === 'recharge' ? 'Recharge Pass' : 'Check Status';
   modeSelect.classList.add('hidden');
@@ -290,6 +303,7 @@ async function enterMode(mode){
 
 async function exitMode(){
   clearTimeout(autoReturnTimer);
+  if (!isOffline) setStatusBar('neutral', 'Ready to scan');
   currentMode = null;
   await stopScanner();
   scanScreen.classList.add('hidden');
@@ -298,15 +312,37 @@ async function exitMode(){
 }
 
 // ---------------- SCANNER ----------------
+async function pickBestCamera(){
+  try{
+    const cameras = await Html5Qrcode.getCameras();
+    if (!cameras || !cameras.length) return null;
+
+    // Prefer a camera explicitly labeled as the plain back/wide lens —
+    // avoids iOS's virtual multi-lens camera that auto-switches to
+    // macro/ultra-wide (and causes a refocus stutter) on Pro models.
+    const preferred = cameras.find(c => /back.*wide|wide.*back/i.test(c.label) && !/ultra|tele/i.test(c.label))
+      || cameras.find(c => /back camera$/i.test(c.label.trim()) && !/ultra|tele/i.test(c.label))
+      || cameras.find(c => /back|rear|environment/i.test(c.label) && !/ultra|tele|front/i.test(c.label));
+
+    return preferred ? preferred.id : null;
+  } catch(e){
+    return null; // fall back to facingMode below
+  }
+}
+
 function startScanner(){
   if (scanning) return;
   caption.textContent = 'Starting camera…';
   html5QrCode = new Html5Qrcode('reader', { experimentalFeatures: { useBarCodeDetectorIfSupported: true } });
-  html5QrCode.start(
-    { facingMode: 'environment' },
-    { fps: 20, qrbox: { width: 220, height: 220 }, disableFlip: true },
-    onScan, () => {}
-  ).then(() => {
+
+  pickBestCamera().then(deviceId => {
+    const cameraConfig = deviceId ? { deviceId: { exact: deviceId } } : { facingMode: 'environment' };
+    return html5QrCode.start(
+      cameraConfig,
+      { fps: 20, qrbox: { width: 220, height: 220 }, disableFlip: true },
+      onScan, () => {}
+    );
+  }).then(() => {
     scanning = true;
     caption.textContent = 'Point camera at the QR code';
   }).catch(err => {
@@ -671,10 +707,14 @@ function flashBarrier(state){
   barrierStage.classList.remove('open','stop');
   const overlay = document.getElementById('flashOverlay');
   overlay.classList.remove('go','stop','active');
-  void overlay.offsetWidth; // force reflow so the flash restarts even on repeated same-state calls
+  void overlay.offsetWidth;
   overlay.classList.add(state === 'go' ? 'go' : 'stop');
   requestAnimationFrame(() => overlay.classList.add('active'));
   setTimeout(() => overlay.classList.remove('active'), 300);
+
+  if (!isOffline){
+    setStatusBar(state === 'go' ? 'good' : 'bad', state === 'go' ? 'Clear' : 'Flagged — needs review');
+  }
 
   if (state === 'go'){
     barrierStage.classList.add('open');
