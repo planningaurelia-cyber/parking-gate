@@ -1,0 +1,37 @@
+# Save this file as: .github/workflows/backup.yml
+# (GitHub only recognizes workflows inside that exact folder)
+
+name: Nightly Supabase Backup
+
+on:
+  schedule:
+    - cron: '30 20 * * *'   # runs 2:00 AM IST every night (20:30 UTC)
+  workflow_dispatch:         # lets you trigger a backup manually too
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Dump tables from Supabase
+        env:
+          SUPABASE_URL: ${{ https://zrmpphpdfiaznxrqhxdi.supabase.co }}
+          SUPABASE_ANON_KEY: ${{ eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InpybXBwaHBkZmlhem54cnFoeGRpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODU1NTE1MDIsImV4cCI6MjEwMTEyNzUwMn0.V6K4lOvD_-K7C0jBytUBDbNdVf5aZXKDgnlybNywV94 }}
+        run: |
+          mkdir -p backups/$(date +%Y-%m-%d)
+          for TABLE in members parking_sessions recharges; do
+            curl -s "$SUPABASE_URL/rest/v1/$TABLE?select=*" \
+              -H "apikey: $SUPABASE_ANON_KEY" \
+              -H "Authorization: Bearer $SUPABASE_ANON_KEY" \
+              -o "backups/$(date +%Y-%m-%d)/$TABLE.json"
+          done
+
+      - name: Commit backup
+        run: |
+          git config user.name "backup-bot"
+          git config user.email "backup-bot@users.noreply.github.com"
+          git add backups/
+          git diff --staged --quiet || git commit -m "Nightly backup $(date +%Y-%m-%d)"
+          git push
