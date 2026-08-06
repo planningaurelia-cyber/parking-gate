@@ -17,8 +17,8 @@ jobs:
 
       - name: Dump tables from Supabase
         env:
-          SUPABASE_URL: ${{ https://zrmpphpdfiaznxrqhxdi.supabase.co }}
-          SUPABASE_ANON_KEY: ${{ eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InpybXBwaHBkZmlhem54cnFoeGRpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODU1NTE1MDIsImV4cCI6MjEwMTEyNzUwMn0.V6K4lOvD_-K7C0jBytUBDbNdVf5aZXKDgnlybNywV94 }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
         run: |
           mkdir -p backups/$(date +%Y-%m-%d)
           for TABLE in members parking_sessions recharges; do
