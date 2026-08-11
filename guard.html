@@ -681,7 +681,7 @@ async function handleRecharge(member, scannedCode){
   caption.textContent = 'Select new validity period';
   resultCard.innerHTML = `
     <div class="name">${escapeHtml(member.name)}</div>
-    <div class="meta">Currently valid until ${member.valid_until || '—'}</div>
+    <div class="meta">Currently valid until ${formatDateDMY(member.valid_until)}</div>
     <div class="form-block">
       <label>Valid from</label>
       <input type="date" id="fromInput" value="${today}">
@@ -716,7 +716,7 @@ async function handleRecharge(member, scannedCode){
     }
     pendingConfirmation = false;
     flashBarrier('go');
-    showResult({ name: member.name, meta: `Recharged · ₹${amount} · valid till ${to}` });
+    showResult({ name: member.name, meta: `Recharged · ₹${amount} · valid till ${formatDateDMY(to)}` });
   };
 }
 
@@ -743,7 +743,7 @@ async function handleStatus(member, scannedCode){
       <div class="form-block" style="border-top:none;padding-top:8px;">
         <div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0;">
           <span style="color:var(--text-dim);">Valid until</span>
-          <span style="font-family:'Oswald',sans-serif;font-size:18px;font-weight:600;">${member.valid_until || '—'}</span>
+          <span style="font-family:'Oswald',sans-serif;font-size:18px;font-weight:600;">${formatDateDMY(member.valid_until)}</span>
         </div>
         <div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0;">
           <span style="color:var(--text-dim);">Right now</span>
@@ -803,6 +803,16 @@ function formatDuration(startIso){
   const mins = Math.round((Date.now() - new Date(startIso).getTime()) / 60000);
   const h = Math.floor(mins/60), m = mins%60;
   return h > 0 ? `${h}h ${m}m` : `${m}m`;
+}
+
+function formatDateDMY(dateStr){
+  if (!dateStr) return '—';
+  const d = new Date(dateStr + 'T00:00:00');
+  if (isNaN(d)) return dateStr;
+  const day = String(d.getDate()).padStart(2, '0');
+  const month = d.toLocaleString('en-GB', { month: 'short' });
+  const year = d.getFullYear();
+  return `${day} ${month} ${year}`;
 }
 
 async function refreshTodayCount(){
