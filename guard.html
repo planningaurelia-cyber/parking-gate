@@ -72,12 +72,24 @@
   .status-caption{text-align:center;font-family:'Oswald',sans-serif;font-size:14px;
     color:var(--text-dim);padding:12px 20px 0;letter-spacing:0.3px;}
 
-  .result{margin:14px 20px 20px;background:var(--panel);border-radius:var(--radius);padding:18px;display:none;
-    border:2px solid transparent;}
+  /* Result popup: fixed backdrop with a bottom-sheet card inside.
+     Backdrop carries the transparent green/red tint; the card itself
+     keeps a solid-ish tinted background so text stays readable in
+     bright daylight at a gate. */
+  .result-backdrop{position:fixed;inset:0;z-index:1000;display:flex;align-items:flex-end;justify-content:center;
+    background:rgba(0,0,0,0);opacity:0;visibility:hidden;pointer-events:none;
+    transition:opacity .2s ease, background-color .2s ease;}
+  .result-backdrop.show{opacity:1;visibility:visible;pointer-events:auto;}
+  .result-backdrop:has(.result.good){background:rgba(47,184,114,.28);}
+  .result-backdrop:has(.result.bad){background:rgba(229,72,77,.28);}
+
+  .result{width:100%;max-width:480px;margin:0;background:var(--panel);border-radius:20px 20px 0 0;
+    padding:22px 20px calc(22px + env(safe-area-inset-bottom));display:none;
+    border-top:4px solid transparent;max-height:82vh;overflow-y:auto;}
   .result.show{display:block;animation:rise .25s ease;}
-  .result.good{background:#1a2e22;border-color:rgba(47,184,114,.4);}
-  .result.bad{background:#2e1a1c;border-color:rgba(229,72,77,.4);}
-  @keyframes rise{from{opacity:0;transform:translateY(8px);}to{opacity:1;transform:translateY(0);}}
+  .result.good{background:#1a2e22;border-top-color:var(--go);}
+  .result.bad{background:#2e1a1c;border-top-color:var(--stop);}
+  @keyframes rise{from{opacity:0;transform:translateY(16px);}to{opacity:1;transform:translateY(0);}}
   .result .name{font-family:'Oswald',sans-serif;font-size:22px;font-weight:600;}
   .result .meta{color:var(--text-dim);font-size:13px;margin-top:2px;}
   .flag{display:inline-block;margin-top:10px;padding:4px 10px;border-radius:20px;
@@ -171,7 +183,7 @@
         <button id="manualEntryLink" style="background:none;border:none;color:var(--text-dim);font-family:inherit;font-size:12px;text-decoration:underline;cursor:pointer;">Card won't scan? Type code</button>
         <button id="vehicleLookupLink" class="hidden" style="background:none;border:none;color:var(--text-dim);font-family:inherit;font-size:12px;text-decoration:underline;cursor:pointer;">Find by vehicle number</button>
       </div>
-      <div class="result" id="resultCard"></div>
+      <div class="result-backdrop" id="resultBackdrop"><div class="result" id="resultCard"></div></div>
     </div>
   </div>
 
@@ -197,6 +209,7 @@ const guardLabel = document.getElementById('guardLabel');
 const signoutBtn = document.getElementById('signout');
 const caption = document.getElementById('caption');
 const resultCard = document.getElementById('resultCard');
+const resultBackdrop = document.getElementById('resultBackdrop');
 const barrierStage = document.getElementById('barrierStage');
 const todayCountEl = document.getElementById('todayCount');
 const statusBar = document.getElementById('statusBar');
@@ -241,6 +254,21 @@ function scheduleAutoReturn(){
   clearTimeout(autoReturnTimer);
   autoReturnTimer = setTimeout(() => { exitMode(); }, AUTO_RETURN_MS);
 } // true while a scan has been read but not yet confirmed (vehicle entry, checkout, recharge)
+
+// ---------------- RESULT POPUP ----------------
+function showModal(){
+  resultBackdrop.classList.add('show');
+}
+function hideModal(){
+  resultBackdrop.classList.remove('show');
+}
+// Tap outside the card to dismiss — only once the action is done (not mid-form),
+// so a stray tap can't lose an unconfirmed check-in/checkout/recharge.
+resultBackdrop.addEventListener('click', (e) => {
+  if (e.target === resultBackdrop && !pendingConfirmation){
+    scanNext();
+  }
+});
 
 // ---------------- NAME PROMPT ----------------
 document.getElementById('startBtn').onclick = () => {
@@ -327,7 +355,7 @@ document.getElementById('manualEntryLink').onclick = () => {
       <button class="btn btn-go" id="manualCodeSubmit">Look up</button>
     </div>
   `;
-  resultCard.classList.add('show');
+  resultCard.classList.add('show'); showModal();
   document.getElementById('manualCodeSubmit').onclick = async () => {
     const code = document.getElementById('manualCodeInput').value.trim();
     if (!code){ alert('Type a code first.'); return; }
@@ -349,7 +377,7 @@ document.getElementById('vehicleLookupLink').onclick = () => {
       <button class="btn btn-go" id="vehLookupSubmit">Find vehicle</button>
     </div>
   `;
-  resultCard.classList.add('show');
+  resultCard.classList.add('show'); showModal();
   document.getElementById('vehLookupSubmit').onclick = async () => {
     const digits = document.getElementById('vehLookupInput').value.trim();
     if (!digits){ alert('Enter the last 4 digits first.'); return; }
@@ -406,7 +434,7 @@ async function checkOutSession(session){
       <button class="btn btn-stop" id="confirmCheckout">Confirm checkout</button>
     </div>
   `;
-  resultCard.classList.add('show');
+  resultCard.classList.add('show'); showModal();
 
   document.getElementById('confirmCheckout').onclick = async () => {
     const finalAmount = parseFloat(document.getElementById('amtInput').value) || 0;
@@ -560,7 +588,7 @@ function showVehicleEntryForm(code, existingMember){
       <button class="btn btn-go" id="confirmCheckin">Check in</button>
     </div>
   `;
-  resultCard.classList.add('show');
+  resultCard.classList.add('show'); showModal();
 
   document.getElementById('confirmCheckin').onclick = async () => {
     const veh = document.getElementById('vehInput').value.trim();
@@ -635,7 +663,7 @@ async function handleCheckOut(member, scannedCode){
       <button class="btn btn-stop" id="confirmCheckout">Confirm checkout</button>
     </div>
   `;
-  resultCard.classList.add('show');
+  resultCard.classList.add('show'); showModal();
 
   document.getElementById('confirmCheckout').onclick = async () => {
     const finalAmount = parseFloat(document.getElementById('amtInput').value) || 0;
@@ -692,7 +720,7 @@ async function handleRecharge(member, scannedCode){
       <button class="btn btn-hazard" id="confirmRecharge">Confirm recharge</button>
     </div>
   `;
-  resultCard.classList.add('show');
+  resultCard.classList.add('show'); showModal();
 
   document.getElementById('confirmRecharge').onclick = async () => {
     const from = document.getElementById('fromInput').value;
@@ -753,7 +781,7 @@ async function handleStatus(member, scannedCode){
       ${lapsed ? `<span class="flag bad">Payment lapsed / plan expired</span>` : `<span class="flag ok">Clear</span>`}
       <button class="btn rescan" style="margin-top:14px;" onclick="scanNext()">Back to menu</button>
     `;
-    resultCard.classList.add('show');
+    resultCard.classList.add('show'); showModal();
     caption.textContent = 'Status';
     scheduleAutoReturn();
     return;
@@ -780,7 +808,7 @@ async function handleStatus(member, scannedCode){
       </div>
       <button class="btn rescan" style="margin-top:14px;" onclick="scanNext()">Back to menu</button>
     `;
-    resultCard.classList.add('show');
+    resultCard.classList.add('show'); showModal();
     caption.textContent = 'Status';
     scheduleAutoReturn();
   } else {
@@ -869,6 +897,7 @@ function playBeep(){
 function resetResult(){
   resultCard.classList.remove('show','good','bad');
   resultCard.innerHTML = '';
+  hideModal();
   barrierStage.classList.remove('open','stop');
   caption.textContent = 'Point camera at the QR code';
   busy = false;
@@ -884,7 +913,7 @@ function showResult({ name, meta, flagBad, badNote }){
     ${flagBad ? `<span class="flag bad">${escapeHtml(badNote || 'Needs attention')}</span>` : `<span class="flag ok">Clear</span>`}
     <button class="btn rescan" style="margin-top:14px;" onclick="scanNext()">Back to menu</button>
   `;
-  resultCard.classList.add('show');
+  resultCard.classList.add('show'); showModal();
   scheduleAutoReturn();
 }
 
