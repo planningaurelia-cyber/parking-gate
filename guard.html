@@ -72,24 +72,34 @@
   .status-caption{text-align:center;font-family:'Oswald',sans-serif;font-size:14px;
     color:var(--text-dim);padding:12px 20px 0;letter-spacing:0.3px;}
 
-  /* Result popup: fixed backdrop with a bottom-sheet card inside.
-     Backdrop carries the transparent green/red tint; the card itself
-     keeps a solid-ish tinted background so text stays readable in
-     bright daylight at a gate. */
-  .result-backdrop{position:fixed;inset:0;z-index:1000;display:flex;align-items:flex-end;justify-content:center;
+  /* Result popup: fixed backdrop, centered card. Its top/height are kept in
+     sync with window.visualViewport in JS, so when the on-screen keyboard
+     opens (checkin/recharge forms) the popup rises with it instead of
+     being covered. Backdrop carries the transparent green/red tint; the
+     card itself keeps a solid-ish tinted background so text stays
+     readable in bright daylight at a gate. */
+  .result-backdrop{position:fixed;top:0;left:0;right:0;height:100%;z-index:1000;
+    display:flex;align-items:center;justify-content:center;padding:20px;
     background:rgba(0,0,0,0);opacity:0;visibility:hidden;pointer-events:none;
-    transition:opacity .2s ease, background-color .2s ease;}
+    transition:opacity .2s ease, background-color .2s ease, top .15s ease, height .15s ease;}
   .result-backdrop.show{opacity:1;visibility:visible;pointer-events:auto;}
   .result-backdrop:has(.result.good){background:rgba(47,184,114,.28);}
   .result-backdrop:has(.result.bad){background:rgba(229,72,77,.28);}
 
-  .result{width:100%;max-width:480px;margin:0;background:var(--panel);border-radius:20px 20px 0 0;
-    padding:22px 20px calc(22px + env(safe-area-inset-bottom));display:none;
-    border-top:4px solid transparent;max-height:82vh;overflow-y:auto;}
-  .result.show{display:block;animation:rise .25s ease;}
+  .result-shell{position:relative;width:100%;max-width:400px;max-height:100%;}
+
+  .result-close{position:absolute;top:-14px;right:-14px;z-index:2;width:34px;height:34px;
+    border-radius:50%;background:var(--panel-2);border:1px solid #3a3f4a;color:var(--text);
+    font-size:15px;line-height:1;cursor:pointer;display:flex;align-items:center;justify-content:center;
+    box-shadow:0 2px 10px rgba(0,0,0,.5);}
+
+  .result{width:100%;background:var(--panel);border-radius:20px;
+    padding:24px 20px;display:none;
+    border-top:4px solid transparent;max-height:80vh;overflow-y:auto;}
+  .result.show{display:block;animation:rise .2s ease;}
   .result.good{background:#1a2e22;border-top-color:var(--go);}
   .result.bad{background:#2e1a1c;border-top-color:var(--stop);}
-  @keyframes rise{from{opacity:0;transform:translateY(16px);}to{opacity:1;transform:translateY(0);}}
+  @keyframes rise{from{opacity:0;transform:scale(.96) translateY(6px);}to{opacity:1;transform:scale(1) translateY(0);}}
   .result .name{font-family:'Oswald',sans-serif;font-size:22px;font-weight:600;}
   .result .meta{color:var(--text-dim);font-size:13px;margin-top:2px;}
   .flag{display:inline-block;margin-top:10px;padding:4px 10px;border-radius:20px;
@@ -183,7 +193,12 @@
         <button id="manualEntryLink" style="background:none;border:none;color:var(--text-dim);font-family:inherit;font-size:12px;text-decoration:underline;cursor:pointer;">Card won't scan? Type code</button>
         <button id="vehicleLookupLink" class="hidden" style="background:none;border:none;color:var(--text-dim);font-family:inherit;font-size:12px;text-decoration:underline;cursor:pointer;">Find by vehicle number</button>
       </div>
-      <div class="result-backdrop" id="resultBackdrop"><div class="result" id="resultCard"></div></div>
+      <div class="result-backdrop" id="resultBackdrop">
+        <div class="result-shell" id="resultShell">
+          <button class="result-close" id="resultClose" aria-label="Close">✕</button>
+          <div class="result" id="resultCard"></div>
+        </div>
+      </div>
     </div>
   </div>
 
@@ -269,6 +284,33 @@ resultBackdrop.addEventListener('click', (e) => {
     scanNext();
   }
 });
+
+// X button — same "are you sure" guard as the scan-screen cancel button,
+// since closing here can also abandon an unconfirmed checkin/checkout/recharge.
+document.getElementById('resultClose').onclick = () => {
+  if (pendingConfirmation){
+    const leave = confirm("This scan hasn't been confirmed yet — nothing has been saved. If you leave now, this vehicle will NOT be checked in/out. Leave anyway?");
+    if (!leave) return;
+  }
+  scanNext();
+};
+
+// Keep the popup's backdrop matched to the visible viewport, not the full
+// layout viewport. When the on-screen keyboard opens (checkin/recharge
+// forms), visualViewport shrinks to the space above the keyboard — so a
+// backdrop sized to it keeps the centered popup above the keyboard instead
+// of letting the keyboard cover it.
+function updateModalViewport(){
+  const vv = window.visualViewport;
+  if (!vv) return;
+  resultBackdrop.style.top = vv.offsetTop + 'px';
+  resultBackdrop.style.height = vv.height + 'px';
+}
+if (window.visualViewport){
+  updateModalViewport();
+  window.visualViewport.addEventListener('resize', updateModalViewport);
+  window.visualViewport.addEventListener('scroll', updateModalViewport);
+}
 
 // ---------------- NAME PROMPT ----------------
 document.getElementById('startBtn').onclick = () => {
