@@ -151,7 +151,7 @@
       <div class="title" id="facilityTitle">SRI VENKATESHWARA PARKING</div>
       <div class="sub" id="guardLabel">Gate Control</div>
       <button id="signout" class="hidden">Sign out</button>
-      <a href="/admin.html" style="display:inline-block;margin-top:6px;margin-left:6px;font-size:11px;color:var(--text-dim);border:1px solid #3a3f4a;padding:6px 10px;border-radius:8px;text-decoration:none;">Admin →</a>
+      <a href="/admin.html" id="adminLink" style="display:inline-block;margin-top:6px;margin-left:6px;font-size:11px;color:var(--text-dim);border:1px solid #3a3f4a;padding:6px 10px;border-radius:8px;text-decoration:none;">Admin →</a>
     </div>
     <div class="stat">
       <div class="num" id="todayCount">–</div>
@@ -230,6 +230,18 @@ async function resolveFacility(){
   FACILITY_ID = data.id;
   document.getElementById('facilityTitle').textContent = data.name;
   document.title = data.name + ' — Gate';
+  document.getElementById('adminLink').href = `/admin.html?facility=${encodeURIComponent(FACILITY_SLUG)}`;
+
+  // Point the PWA manifest at this facility's own manifest file, so
+  // "Add to Home Screen" opens straight into this lot instead of the
+  // plain (facility-less) guard.html.
+  let manifestTag = document.querySelector('link[rel="manifest"]');
+  if (!manifestTag){
+    manifestTag = document.createElement('link');
+    manifestTag.rel = 'manifest';
+    document.head.appendChild(manifestTag);
+  }
+  manifestTag.href = `/manifest-${encodeURIComponent(FACILITY_SLUG)}.json`;
 }
 
 // Pricing: ₹25 flat for up to 12h. Beyond that, any partial hour rounds up, ₹2/hr.
