@@ -230,7 +230,7 @@ async function resolveFacility(){
   FACILITY_ID = data.id;
   document.getElementById('facilityTitle').textContent = data.name;
   document.title = data.name + ' — Gate';
-  document.getElementById('adminLink').href = `/admin.html?facility=${encodeURIComponent(FACILITY_SLUG)}`;
+  document.getElementById('adminLink').href = `/admin?facility=${encodeURIComponent(FACILITY_SLUG)}`;
 
   // Point the PWA manifest at this facility's own manifest file, so
   // "Add to Home Screen" opens straight into this lot instead of the

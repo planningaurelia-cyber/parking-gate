@@ -1,7 +1,7 @@
 {
   "name": "Sri Venkateshwara Parking",
   "short_name": "SV Parking",
-  "start_url": "/guard.html?facility=svparking",
+  "start_url": "/guard?facility=svparking",
   "scope": "/",
   "display": "standalone",
   "orientation": "portrait",
