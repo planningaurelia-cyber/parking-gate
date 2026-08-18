@@ -56,11 +56,11 @@
   <div id="mainView" class="hidden">
     <div class="topbar">
       <div>
-        <div class="title">SRI VENKATESHWARA PARKING</div>
+        <div class="title" id="facilityTitle">SRI VENKATESHWARA PARKING</div>
         <div style="font-size:11px;color:var(--text-dim);margin-top:2px;">Admin</div>
       </div>
       <div style="display:flex;gap:8px;align-items:center;">
-        <a href="/guard.html" style="font-size:12px;color:var(--text-dim);border:1px solid #3a3f4a;padding:8px 12px;border-radius:8px;text-decoration:none;">← Gate</a>
+        <a href="#" id="gateLink" style="font-size:12px;color:var(--text-dim);border:1px solid #3a3f4a;padding:8px 12px;border-radius:8px;text-decoration:none;">← Gate</a>
         <button class="btn" id="signout" style="background:none;border:1px solid #3a3f4a;color:var(--text-dim);">Sign out</button>
       </div>
     </div>
@@ -155,6 +155,27 @@ const SUPABASE_URL = 'https://zrmpphpdfiaznxrqhxdi.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InpybXBwaHBkZmlhem54cnFoeGRpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODU1NTE1MDIsImV4cCI6MjEwMTEyNzUwMn0.V6K4lOvD_-K7C0jBytUBDbNdVf5aZXKDgnlybNywV94';
 const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
+// ---- FACILITY RESOLUTION (which parking lot this admin link belongs to) ----
+const urlParams = new URLSearchParams(window.location.search);
+const FACILITY_SLUG = urlParams.get('facility');
+let FACILITY_ID = null;
+
+async function resolveFacility(){
+  if (!FACILITY_SLUG){
+    document.body.innerHTML = '<div style="padding:60px 24px;text-align:center;color:#f2f0ea;font-family:sans-serif;">This link is missing a facility. Use the correct admin link for this lot, e.g. admin.html?facility=lot-a</div>';
+    throw new Error('no facility slug in URL');
+  }
+  const { data, error } = await sb.from('facilities').select('*').eq('slug', FACILITY_SLUG).eq('is_active', true).maybeSingle();
+  if (error || !data){
+    document.body.innerHTML = '<div style="padding:60px 24px;text-align:center;color:#f2f0ea;font-family:sans-serif;">Invalid or inactive facility link.</div>';
+    throw new Error('facility not found: ' + FACILITY_SLUG);
+  }
+  FACILITY_ID = data.id;
+  document.getElementById('facilityTitle').textContent = data.name;
+  document.title = data.name + ' — Admin';
+  document.getElementById('gateLink').href = `/guard.html?facility=${encodeURIComponent(FACILITY_SLUG)}`;
+}
+
 const loginView = document.getElementById('loginView');
 const mainView = document.getElementById('mainView');
 
@@ -185,8 +206,8 @@ async function boot(){
 
 async function loadDutyList(){
   const startOfDay = new Date(); startOfDay.setHours(0,0,0,0);
-  const { data: sessions } = await sb.from('parking_sessions').select('guard_notes').gte('checked_in_at', startOfDay.toISOString());
-  const { data: recharges } = await sb.from('recharges').select('guard_notes').gte('recharged_at', startOfDay.toISOString());
+  const { data: sessions } = await sb.from('parking_sessions').select('guard_notes').eq('facility_id', FACILITY_ID).gte('checked_in_at', startOfDay.toISOString());
+  const { data: recharges } = await sb.from('recharges').select('guard_notes').eq('facility_id', FACILITY_ID).gte('recharged_at', startOfDay.toISOString());
 
   const counts = {};
   [...(sessions || []), ...(recharges || [])].forEach(row => {
@@ -229,17 +250,20 @@ async function runReport(start, end){
   lastReportRange = { start, end };
   const { count } = await sb.from('parking_sessions')
     .select('id', { count: 'exact', head: true })
+    .eq('facility_id', FACILITY_ID)
     .gte('checked_in_at', start.toISOString())
     .lte('checked_in_at', end.toISOString());
 
   const { data: sessions } = await sb.from('parking_sessions')
     .select('amount_collected')
+    .eq('facility_id', FACILITY_ID)
     .gte('checked_in_at', start.toISOString())
     .lte('checked_in_at', end.toISOString());
   const sessionTotal = (sessions || []).reduce((sum, s) => sum + (s.amount_collected || 0), 0);
 
   const { data: recharges } = await sb.from('recharges')
     .select('amount')
+    .eq('facility_id', FACILITY_ID)
     .gte('recharged_at', start.toISOString())
     .lte('recharged_at', end.toISOString());
   const rechargeTotal = (recharges || []).reduce((sum, r) => sum + (r.amount || 0), 0);
@@ -255,6 +279,7 @@ document.getElementById('exportCsvBtn').onclick = async () => {
 
   const { data: sessions } = await sb.from('parking_sessions')
     .select('*, members(name, plan_type)')
+    .eq('facility_id', FACILITY_ID)
     .gte('checked_in_at', start.toISOString())
     .lte('checked_in_at', end.toISOString())
     .order('checked_in_at');
@@ -270,6 +295,7 @@ document.getElementById('exportCsvBtn').onclick = async () => {
 
   const { data: recharges } = await sb.from('recharges')
     .select('*, members(name)')
+    .eq('facility_id', FACILITY_ID)
     .gte('recharged_at', start.toISOString())
     .lte('recharged_at', end.toISOString())
     .order('recharged_at');
@@ -292,19 +318,23 @@ async function loadStats(){
 
   const { count: checkedIn } = await sb.from('parking_sessions')
     .select('id', { count: 'exact', head: true })
+    .eq('facility_id', FACILITY_ID)
     .gte('checked_in_at', startOfDay.toISOString());
 
   const { count: present } = await sb.from('parking_sessions')
     .select('id', { count: 'exact', head: true })
+    .eq('facility_id', FACILITY_ID)
     .is('checked_out_at', null);
 
   const { data: todaySessions } = await sb.from('parking_sessions')
     .select('amount_collected')
+    .eq('facility_id', FACILITY_ID)
     .gte('checked_in_at', startOfDay.toISOString());
   const sessionAmount = (todaySessions || []).reduce((sum, s) => sum + (s.amount_collected || 0), 0);
 
   const { data: todayRecharges } = await sb.from('recharges')
     .select('amount')
+    .eq('facility_id', FACILITY_ID)
     .gte('recharged_at', startOfDay.toISOString());
   const rechargeAmount = (todayRecharges || []).reduce((sum, r) => sum + (r.amount || 0), 0);
 
@@ -328,7 +358,8 @@ document.getElementById('addBtn').onclick = async () => {
     vehicle_number: document.getElementById('f_vehicle').value.trim(),
     plan_type: plan,
     monthly_fee: plan === 'monthly' ? parseFloat(document.getElementById('f_fee').value) || null : null,
-    per_visit_rate: plan === 'per_visit' ? parseFloat(document.getElementById('f_rate').value) || null : null
+    per_visit_rate: plan === 'per_visit' ? parseFloat(document.getElementById('f_rate').value) || null : null,
+    facility_id: FACILITY_ID
   };
   if (!payload.name || !payload.phone || !payload.vehicle_number){
     errBox.textContent = 'Name, phone and vehicle number are required.';
@@ -382,7 +413,7 @@ function oneMonthFromNow(){
 document.getElementById('memberSearch').oninput = (e) => renderMembers(e.target.value.trim().toLowerCase());
 
 async function loadMembers(){
-  const { data: members, error } = await sb.from('members').select('*').order('created_at', { ascending: false });
+  const { data: members, error } = await sb.from('members').select('*').eq('facility_id', FACILITY_ID).order('created_at', { ascending: false });
   if (error){ document.getElementById('memberRows').innerHTML = `<tr><td colspan="6">Error loading members</td></tr>`; return; }
   allMembers = members || [];
   renderMembers(document.getElementById('memberSearch').value.trim().toLowerCase());
@@ -460,7 +491,7 @@ function escapeHtml(s){
   return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 }
 
-boot();
+resolveFacility().then(boot).catch(() => {});
 </script>
 </body>
 </html>
