@@ -148,7 +148,7 @@
 
   <div class="topbar">
     <div>
-      <div class="title">SRI VENKATESHWARA PARKING</div>
+      <div class="title" id="facilityTitle">SRI VENKATESHWARA PARKING</div>
       <div class="sub" id="guardLabel">Gate Control</div>
       <button id="signout" class="hidden">Sign out</button>
       <a href="/admin.html" style="display:inline-block;margin-top:6px;margin-left:6px;font-size:11px;color:var(--text-dim);border:1px solid #3a3f4a;padding:6px 10px;border-radius:8px;text-decoration:none;">Admin →</a>
@@ -211,6 +211,26 @@
 const SUPABASE_URL = 'https://zrmpphpdfiaznxrqhxdi.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InpybXBwaHBkZmlhem54cnFoeGRpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODU1NTE1MDIsImV4cCI6MjEwMTEyNzUwMn0.V6K4lOvD_-K7C0jBytUBDbNdVf5aZXKDgnlybNywV94';
 const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+// ---- FACILITY RESOLUTION (which parking lot this link belongs to) ----
+const urlParams = new URLSearchParams(window.location.search);
+const FACILITY_SLUG = urlParams.get('facility');
+let FACILITY_ID = null;
+
+async function resolveFacility(){
+  if (!FACILITY_SLUG){
+    document.body.innerHTML = '<div style="padding:60px 24px;text-align:center;color:#f2f0ea;font-family:sans-serif;">This link is missing a facility. Ask the office for the correct gate link.</div>';
+    throw new Error('no facility slug in URL');
+  }
+  const { data, error } = await sb.from('facilities').select('*').eq('slug', FACILITY_SLUG).eq('is_active', true).maybeSingle();
+  if (error || !data){
+    document.body.innerHTML = '<div style="padding:60px 24px;text-align:center;color:#f2f0ea;font-family:sans-serif;">Invalid or inactive facility link. Ask the office for the correct gate link.</div>';
+    throw new Error('facility not found: ' + FACILITY_SLUG);
+  }
+  FACILITY_ID = data.id;
+  document.getElementById('facilityTitle').textContent = data.name;
+  document.title = data.name + ' — Gate';
+}
 
 // Pricing: ₹25 flat for up to 12h. Beyond that, any partial hour rounds up, ₹2/hr.
 const BASE_FEE = 25, BASE_HOURS = 12, HOURLY_RATE = 2;
@@ -426,6 +446,7 @@ document.getElementById('vehicleLookupLink').onclick = () => {
     pauseScanner();
     const { data: matches } = await sb.from('parking_sessions')
       .select('*, members(name)')
+      .eq('facility_id', FACILITY_ID)
       .is('checked_out_at', null)
       .ilike('vehicle_number', `%${digits}`);
 
@@ -573,10 +594,10 @@ async function findMember(rawCode){
 
   // Always try both — don't gate on regex, since a stray character
   // would silently break the id match and mis-file a real member as unknown.
-  const { data: byId } = await sb.from('members').select('*').eq('id', code).maybeSingle();
+  const { data: byId } = await sb.from('members').select('*').eq('id', code).eq('facility_id', FACILITY_ID).maybeSingle();
   if (byId) return byId;
 
-  const { data: byCard } = await sb.from('members').select('*').eq('card_code', code).maybeSingle();
+  const { data: byCard } = await sb.from('members').select('*').eq('card_code', code).eq('facility_id', FACILITY_ID).maybeSingle();
   return byCard || null;
 }
 
@@ -598,7 +619,7 @@ async function handleCheckIn(code, member){
   if (member && member.plan_type === 'monthly'){
     const lapsed = member.payment_status === 'lapsed' || (member.valid_until && new Date(member.valid_until) < new Date());
     const { error: insErr } = await sb.from('parking_sessions').insert({
-      member_id: member.id, guard_notes: `Checked in by ${currentGuardName}`
+      member_id: member.id, facility_id: FACILITY_ID, guard_notes: `Checked in by ${currentGuardName}`
     });
     if (insErr){
       flashBarrier('stop');
@@ -639,7 +660,7 @@ function showVehicleEntryForm(code, existingMember){
     let memberId = existingMember ? existingMember.id : null;
     if (!memberId){
       const { data: newMember, error } = await sb.from('members').insert({
-        name: 'Day Pass', plan_type: 'per_visit', card_code: code
+        name: 'Day Pass', plan_type: 'per_visit', card_code: code, facility_id: FACILITY_ID
       }).select().single();
       if (error){
         flashBarrier('stop'); showResult({ name:'Error', meta:'Could not register card — try again', flagBad:true }); return;
@@ -648,7 +669,7 @@ function showVehicleEntryForm(code, existingMember){
     }
 
     const { error: insErr } = await sb.from('parking_sessions').insert({
-      member_id: memberId, vehicle_number: veh, guard_notes: `Checked in by ${currentGuardName}`
+      member_id: memberId, vehicle_number: veh, facility_id: FACILITY_ID, guard_notes: `Checked in by ${currentGuardName}`
     });
     if (insErr){
       flashBarrier('stop'); showResult({ name:'Error', meta:'Could not open session — try again', flagBad:true }); return;
@@ -778,7 +799,7 @@ async function handleRecharge(member, scannedCode){
       return;
     }
     const { error: rechargeErr } = await sb.from('recharges').insert({
-      member_id: member.id, amount, valid_from: from, valid_until: to,
+      member_id: member.id, amount, valid_from: from, valid_until: to, facility_id: FACILITY_ID,
       guard_notes: `Recharged by ${currentGuardName}`
     });
     if (rechargeErr){
@@ -888,6 +909,7 @@ function formatDateDMY(dateStr){
 async function refreshTodayCount(){
   const { count } = await sb.from('parking_sessions')
     .select('id', { count: 'exact', head: true })
+    .eq('facility_id', FACILITY_ID)
     .is('checked_out_at', null);
   todayCountEl.textContent = count ?? '0';
 }
@@ -968,7 +990,7 @@ window.scanNext = function(){
   exitMode();
 };
 
-boot();
+resolveFacility().then(boot).catch(() => {});
 </script>
 </body>
 </html>
